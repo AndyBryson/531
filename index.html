@@ -1,4 +1,5 @@
 <title>Iron Cycle</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -37,16 +38,6 @@
   input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 
   .app{max-width:1440px; margin:0 auto; padding-inline:16px;}
-  .topbar{
-    display:flex; justify-content:space-between; align-items:center; gap:12px;
-    padding-block:14px; border-bottom:1px solid var(--border); flex-wrap:wrap;
-  }
-  .brand{display:flex; align-items:center; gap:10px;}
-  .brand .plates{display:flex; gap:3px;}
-  .brand .plates span{width:6px; height:22px; border-radius:2px; display:block;}
-  .brand h1{font-size:22px; text-transform:uppercase; letter-spacing:.04em;}
-  .brand p{margin:0; font-size:11.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;}
-  .topbar-actions{display:flex; gap:8px;}
   .btn{
     background:var(--surface); border:1px solid var(--border); border-radius:7px;
     padding:8px 14px; font-weight:600; color:var(--text);
@@ -55,11 +46,24 @@
   .btn.primary{background:var(--accent); color:var(--accent-contrast); border-color:var(--accent);}
 
   .shell{display:grid; grid-template-columns:320px 1fr; gap:18px; padding-block:18px 60px; align-items:start;}
-  @media (max-width:900px){ .shell{grid-template-columns:1fr;} .controls{position:static; max-height:none;} }
 
   .controls{
-    position:sticky; top:78px; display:flex; flex-direction:column; gap:14px;
-    max-height:calc(100vh - 96px); overflow-y:auto; padding-bottom:8px;
+    position:sticky; top:18px; display:flex; flex-direction:column; gap:14px;
+    max-height:calc(100vh - 36px); overflow-y:auto; padding-bottom:8px;
+  }
+  .menu-toggle{display:none;}
+  /* declared after the base .controls rule so this actually wins at equal
+     specificity — it previously came first and was always overridden */
+  @media (max-width:900px){
+    .shell{grid-template-columns:1fr;}
+    .controls{position:static; max-height:none; display:none;}
+    .controls.open{display:flex;}
+    .menu-toggle{
+      display:flex; align-items:center; gap:8px; width:100%;
+      background:var(--surface); border:1px solid var(--border); border-radius:8px;
+      padding:10px 14px; margin-top:18px; font-weight:600; font-size:13px; color:var(--text);
+    }
+    .menu-toggle:hover{border-color:var(--accent);}
   }
   .ctrl-group{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 15px; box-shadow:var(--shadow);}
   .ctrl-group h2{font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); margin-bottom:10px;}
@@ -105,13 +109,14 @@
   .order-presets button.active{border-color:var(--accent); color:var(--accent);}
 
   .output{min-width:0;}
-  .program-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:14px;}
+  .program-head{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:14px;}
   .program-title-input{
     font-family:var(--display); font-size:26px; font-weight:600; letter-spacing:.01em;
     background:none; border:none; border-bottom:2px dashed var(--rule); padding:2px 2px 4px; color:var(--text); min-width:220px; flex:1;
   }
   .program-title-input:focus{outline:none; border-bottom-color:var(--accent);}
   .program-sub{font-size:12px; color:var(--text-dim);}
+  .program-actions{display:flex; gap:8px; flex:none;}
 
   .accessory-editor{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px; margin-bottom:18px;}
   .accessory-editor h2{font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); margin-bottom:4px;}
@@ -165,7 +170,7 @@
   @page{size:A4 landscape; margin:8mm;}
 
   @media print{
-    .controls, .topbar, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
+    .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
     body{background:#fff; color:#000; font-size:9px;}
     .app{max-width:none;}
     .shell{display:block; padding:0;}
@@ -202,22 +207,7 @@
 </style>
 
 <div class="app">
-  <header class="topbar">
-    <div class="brand">
-      <span class="plates" aria-hidden="true">
-        <span style="background:#C8352B"></span><span style="background:#2E5FA8"></span><span style="background:#D9B92C"></span><span style="background:#3C8A4C"></span>
-      </span>
-      <div>
-        <h1>Iron Cycle</h1>
-        <p>5/3/1 training-max planner</p>
-      </div>
-    </div>
-    <div class="topbar-actions">
-      <button class="btn" id="copyBtn">Copy program</button>
-      <button class="btn primary" id="printBtn">Print</button>
-    </div>
-  </header>
-
+  <button class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="controls">☰ Settings</button>
   <div class="shell">
     <aside class="controls" id="controls">
 
@@ -303,6 +293,10 @@
       <div class="program-head">
         <input type="text" id="programTitle" class="program-title-input" placeholder="Untitled cycle">
         <span class="program-sub" id="programSub"></span>
+        <div class="program-actions">
+          <button class="btn" id="copyBtn">Copy program</button>
+          <button class="btn primary" id="printBtn">Print</button>
+        </div>
       </div>
 
       <div class="accessory-editor">
@@ -361,7 +355,7 @@
     {w:10, color:"#C8352B"}, {w:5, chrome:true}, {w:2.5, chrome:true}, {w:1.25, chrome:true}
   ];
   // plates owned per side, by default
-  var DEFAULT_PLATES_KG = {25:2, 20:2, 15:1, 10:2, 5:2, 2.5:2, 1.25:1};
+  var DEFAULT_PLATES_KG = {25:1, 20:2, 15:1, 10:1, 5:1, 2.5:1, 1.25:1, 0.5:0};
   var DEFAULT_PLATES_LBS = {45:2, 35:1, 25:2, 10:2, 5:2, 2.5:1};
 
   var EPS = 1e-6;
@@ -1050,6 +1044,13 @@
   });
 
   function renderOutputOnly(){ renderOutput(generateProgram()); }
+
+  document.getElementById("menuToggle").addEventListener("click", function(){
+    var controls = document.getElementById("controls");
+    var open = controls.classList.toggle("open");
+    this.setAttribute("aria-expanded", open ? "true" : "false");
+    this.textContent = open ? "✕ Close" : "☰ Settings";
+  });
 
   function setUnit(unit){
     if(unit===state.unit) return;
