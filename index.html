@@ -364,8 +364,22 @@
   var DEFAULT_PLATES_KG = {25:2, 20:2, 15:1, 10:2, 5:2, 2.5:2, 1.25:1};
   var DEFAULT_PLATES_LBS = {45:2, 35:1, 25:2, 10:2, 5:2, 2.5:1};
 
-  var STORAGE_KEY = "iron-cycle-state-v3"; // v3: plate quantities changed from total-owned back to per-side
   var EPS = 1e-6;
+
+  // ---------------- state <-> URL encoding ----------------
+  // the whole program lives in the URL's hash fragment (never sent to a server,
+  // safe on a static host), as base64url-encoded JSON — so the address bar is
+  // always a shareable link to the exact program currently on screen, no backend
+  // or localStorage needed.
+  function toBase64Url(str){
+    var b64 = btoa(unescape(encodeURIComponent(str)));
+    return b64.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  }
+  function fromBase64Url(b64url){
+    var b64 = b64url.replace(/-/g,"+").replace(/_/g,"/");
+    while(b64.length % 4) b64 += "=";
+    return decodeURIComponent(escape(atob(b64)));
+  }
 
   // ---------------- state ----------------
   function defaultState(){
@@ -400,9 +414,9 @@
 
   function loadState(){
     try{
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return defaultState();
-      var parsed = JSON.parse(raw);
+      var hash = location.hash.replace(/^#/,"");
+      if(hash.indexOf("s=")!==0) return defaultState();
+      var parsed = JSON.parse(fromBase64Url(hash.slice(2)));
       var d = defaultState();
       // shallow-merge to survive future field additions
       return Object.assign(d, parsed, {
@@ -419,7 +433,13 @@
     try{
       clearTimeout(saveTimer);
       saveTimer = setTimeout(function(){
-        try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+        try{
+          var hash = "#s="+toBase64Url(JSON.stringify(state));
+          // replaceState, not location.hash=, so every keystroke doesn't spam
+          // browser history — the URL still updates live, just without a new
+          // back-button entry per edit
+          history.replaceState(null, "", hash);
+        }catch(e){}
       }, 250);
     }catch(e){}
   }
@@ -1103,6 +1123,13 @@
   document.getElementById("printBtn").addEventListener("click", function(){ window.print(); });
 
   // ---------------- init ----------------
+  // our own writes use history.replaceState, which never fires hashchange, so this
+  // only fires on an actual navigation — e.g. pasting a different shared link into
+  // this same tab, or using back/forward — and is safe from feedback loops
+  window.addEventListener("hashchange", function(){
+    state = loadState();
+    render();
+  });
   render();
 })();
 </script>
