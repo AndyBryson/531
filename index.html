@@ -1,0 +1,1166 @@
+<title>Iron Cycle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#F1EFEA; --surface:#FFFFFF; --surface-2:#F7F5EF; --border:#DDD7C8;
+    --text:#1E2024; --text-dim:#68655C; --accent:#95661A; --accent-contrast:#FFFFFF;
+    --accent-soft:#F1E2C2; --good:#2F6B45; --warn:#AA4A22; --rule:#D6CFBC;
+    --shadow:0 1px 2px rgba(30,32,36,.07),0 6px 16px rgba(30,32,36,.05);
+    --radius:10px; --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',monospace;
+    --sans:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+    --display:'Oswald','Arial Narrow',sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#18191C; --surface:#212327; --surface-2:#27292E; --border:#35373C;
+      --text:#F1EEE6; --text-dim:#A6A399; --accent:#D8AD52; --accent-contrast:#18191C;
+      --accent-soft:#392E1B; --good:#6FBF87; --warn:#E28C5C; --rule:#3A3D42;
+      --shadow:0 1px 2px rgba(0,0,0,.45),0 8px 20px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#18191C; --surface:#212327; --surface-2:#27292E; --border:#35373C;
+    --text:#F1EEE6; --text-dim:#A6A399; --accent:#D8AD52; --accent-contrast:#18191C;
+    --accent-soft:#392E1B; --good:#6FBF87; --warn:#E28C5C; --rule:#3A3D42;
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 8px 20px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box;}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.45;}
+  h1,h2,h3,h4{font-family:var(--display); font-weight:600; letter-spacing:.01em; text-wrap:balance; margin:0;}
+  .num{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  a{color:var(--accent);}
+  button{font-family:var(--sans); cursor:pointer;}
+  input,select,button{font-size:13px; color:var(--text);}
+  input,select{background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:6px 8px;}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+
+  .app{max-width:1440px; margin:0 auto; padding-inline:16px;}
+  .topbar{
+    display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding-block:14px; border-bottom:1px solid var(--border); flex-wrap:wrap;
+  }
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand .plates{display:flex; gap:3px;}
+  .brand .plates span{width:6px; height:22px; border-radius:2px; display:block;}
+  .brand h1{font-size:22px; text-transform:uppercase; letter-spacing:.04em;}
+  .brand p{margin:0; font-size:11.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;}
+  .topbar-actions{display:flex; gap:8px;}
+  .btn{
+    background:var(--surface); border:1px solid var(--border); border-radius:7px;
+    padding:8px 14px; font-weight:600; color:var(--text);
+  }
+  .btn:hover{border-color:var(--accent);}
+  .btn.primary{background:var(--accent); color:var(--accent-contrast); border-color:var(--accent);}
+
+  .shell{display:grid; grid-template-columns:320px 1fr; gap:18px; padding-block:18px 60px; align-items:start;}
+  @media (max-width:900px){ .shell{grid-template-columns:1fr;} .controls{position:static; max-height:none;} }
+
+  .controls{
+    position:sticky; top:78px; display:flex; flex-direction:column; gap:14px;
+    max-height:calc(100vh - 96px); overflow-y:auto; padding-bottom:8px;
+  }
+  .ctrl-group{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 15px; box-shadow:var(--shadow);}
+  .ctrl-group h2{font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); margin-bottom:10px;}
+  .ctrl-row{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+  .ctrl-row:last-child{margin-bottom:0;}
+  .ctrl-row label{color:var(--text-dim); font-size:12.5px;}
+  .seg{display:flex; border:1px solid var(--border); border-radius:7px; overflow:hidden;}
+  .seg button{flex:1; background:var(--surface-2); border:none; padding:6px 8px; font-size:12px; font-weight:600; color:var(--text-dim);}
+  .seg button.active{background:var(--accent); color:var(--accent-contrast);}
+  .seg button + button{border-left:1px solid var(--border);}
+
+  .lift-row{border-top:1px solid var(--rule); padding-top:8px; margin-top:8px;}
+  .lift-row:first-of-type{border-top:none; margin-top:0; padding-top:0;}
+  .lift-row .lift-name{font-weight:600; font-size:12.5px; margin-bottom:5px;}
+  .lift-inputs{display:flex; gap:6px; align-items:center;}
+  .lift-inputs input{width:100%;}
+  .lift-inputs .reps-input{width:48px; flex:none;}
+  .unit-tag{font-size:11px; color:var(--text-dim); flex:none;}
+
+  .field{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+  .field:last-child{margin-bottom:0;}
+  .field input[type=number]{width:76px; text-align:right;}
+  .field select{width:170px;}
+  .hint{font-size:11.5px; color:var(--text-dim); margin-top:6px;}
+
+  .weekchips{display:flex; gap:6px; flex-wrap:wrap;}
+  .chip{border:1px solid var(--border); border-radius:20px; padding:4px 10px; font-size:12px; background:var(--surface-2); color:var(--text-dim); display:flex; align-items:center; gap:5px;}
+  .chip input{margin:0;}
+
+  .plate-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:6px;}
+  .plate-check{display:flex; align-items:center; gap:5px; font-size:12px; border:1px solid var(--border); border-radius:6px; padding:4px 6px; background:var(--surface-2);}
+  .plate-swatch{width:10px; height:16px; border-radius:2px; flex:none; border:1px solid rgba(0,0,0,.15);}
+  .plate-label{flex:1; color:var(--text-dim);}
+  .plate-qty{width:44px; flex:none; padding:3px 4px; text-align:right;}
+
+  .order-list{display:flex; flex-direction:column; gap:5px;}
+  .order-item{display:flex; align-items:center; justify-content:space-between; background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:12.5px;}
+  .order-item .arrows{display:flex; gap:3px;}
+  .order-item button{background:none; border:none; color:var(--text-dim); font-size:12px; padding:2px 4px;}
+  .order-item button:hover{color:var(--accent);}
+  .order-presets{display:flex; gap:6px; margin-bottom:8px;}
+  .order-presets button{flex:1; font-size:11.5px; padding:5px; background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text-dim);}
+  .order-presets button.active{border-color:var(--accent); color:var(--accent);}
+
+  .output{min-width:0;}
+  .program-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:14px;}
+  .program-title-input{
+    font-family:var(--display); font-size:26px; font-weight:600; letter-spacing:.01em;
+    background:none; border:none; border-bottom:2px dashed var(--rule); padding:2px 2px 4px; color:var(--text); min-width:220px; flex:1;
+  }
+  .program-title-input:focus{outline:none; border-bottom-color:var(--accent);}
+  .program-sub{font-size:12px; color:var(--text-dim);}
+
+  .accessory-editor{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px; margin-bottom:18px;}
+  .accessory-editor h2{font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); margin-bottom:4px;}
+  .accessory-editor > p{font-size:12px; color:var(--text-dim); margin:0 0 12px;}
+  .accessory-lifts{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px;}
+  .accessory-lift h3{font-size:14px; margin-bottom:8px; display:flex; align-items:center; gap:6px;}
+  .accessory-lift h3 .dot{width:8px; height:8px; border-radius:50%; background:var(--accent); display:inline-block;}
+  .exrow{display:flex; flex-wrap:wrap; gap:6px; align-items:center; background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:6px 8px; margin-bottom:6px;}
+  .exrow input[type=text]{flex:1 1 110px; min-width:90px;}
+  .exrow input[type=number]{width:52px;}
+  .exrow .wt-input{width:64px;}
+  .exrow label.bw{display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text-dim); white-space:nowrap;}
+  .exrow .rm{background:none; border:none; color:var(--warn); font-size:15px; line-height:1; padding:2px 4px;}
+  .add-ex{font-size:12px; background:none; border:1px dashed var(--rule); border-radius:6px; padding:6px 10px; color:var(--text-dim); width:100%;}
+  .add-ex:hover{border-color:var(--accent); color:var(--accent);}
+
+  .weektabs{display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;}
+  .weektab{background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 16px; font-weight:600; font-size:12.5px; color:var(--text-dim);}
+  .weektab.active{background:var(--accent); color:var(--accent-contrast); border-color:var(--accent);}
+
+  .week-panel{display:none;}
+  .week-panel.active{display:block;}
+  .week-print-heading{display:none;}
+  .day-cards{display:flex; flex-direction:column; gap:16px;}
+
+  .day-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden;}
+  .day-head{display:flex; justify-content:space-between; align-items:baseline; padding:12px 16px; border-bottom:1px solid var(--rule); background:var(--surface-2);}
+  .day-head h3{font-size:16px;}
+  .day-head .day-idx{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim);}
+  .day-body{padding:14px 16px; display:flex; flex-direction:column; gap:14px;}
+
+  table.set-table{width:100%; border-collapse:collapse; font-size:13px;}
+  table.set-table th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); font-weight:600; padding:0 8px 6px 0; border-bottom:1px solid var(--rule);}
+  table.set-table td{padding:5px 8px 5px 0; border-bottom:1px solid var(--rule); vertical-align:middle;}
+  table.set-table tr:last-child td{border-bottom:none;}
+  table.set-table td.reps{white-space:nowrap;}
+  table.set-table td.wt{font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  table.set-table td.pct{color:var(--text-dim); font-size:12px;}
+  .amrap-tag{color:var(--accent); font-weight:700; margin-left:2px;}
+  .warmup-row td{color:var(--text-dim);}
+  .section-label{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); font-weight:600; margin-bottom:2px;}
+  .print-col{display:none;}
+  .chk{display:inline-block;}
+
+  .bar{display:flex; align-items:center; gap:1px; height:18px;}
+  .bar .sleeve{background:var(--rule); height:4px; flex:0 0 10px; border-radius:2px;}
+  .bar .plate{border-radius:2px; border:1px solid rgba(0,0,0,.18);}
+  .bar .plate.chrome{background:repeating-linear-gradient(135deg,#9a9a9e,#9a9a9e 2px,#bdbdc1 2px,#bdbdc1 4px);}
+
+  .bw-row td{color:var(--text-dim); font-style:italic;}
+  .below-bar{color:var(--warn); font-size:11px;}
+
+  .empty-note{font-size:12.5px; color:var(--text-dim); font-style:italic;}
+
+  footer.foot{margin-top:30px; padding-top:16px; border-top:1px solid var(--border); font-size:11.5px; color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
+
+  @media print{
+    .controls, .topbar-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
+    body{background:#fff; color:#000; font-size:10.5px;}
+    .app{max-width:none;}
+    .shell{display:block; padding:0;}
+    .program-head{margin-bottom:4px;}
+    .program-title-input{font-size:20px; border-bottom:none; color:#000;}
+    .program-sub{color:#444;}
+
+    /* every week prints, one to a page, instead of only the tab currently open on screen */
+    .week-panel{display:block !important; break-before:page; page-break-before:always;}
+    .week-panel:first-child{break-before:auto; page-break-before:avoid;}
+    .week-print-heading{
+      display:block; font-size:15px; text-transform:uppercase; letter-spacing:.06em;
+      border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:10px;
+    }
+    /* two lifts per row by default, so a week fits on far fewer pages, but a 3-day
+       week (e.g. Beginners) gets its own row so all three sit side by side instead
+       of leaving an awkward gap */
+    .day-cards{display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start;}
+    .day-cards.count-3{grid-template-columns:1fr 1fr 1fr;}
+
+    .day-card{break-inside:avoid; box-shadow:none; border:1px solid #888; border-radius:0;}
+    .day-head{background:#eee;}
+    table.set-table th, table.set-table td{border-bottom:1px solid #ccc; padding:3px 6px 3px 0;}
+    .hint{color:#555;}
+    .below-bar{color:#000; font-style:italic;}
+
+    /* plate colours rarely survive to paper reliably, so print falls back to the
+       weight badges (e.g. "25 + 2.5") already generated alongside the bar graphic */
+    .bar{display:none;}
+
+    .print-col{display:table-cell !important;}
+    thead .print-col{text-align:center;}
+    .chk{
+      width:11px; height:11px; border:1px solid #000; border-radius:2px;
+      display:inline-block; margin:0 auto;
+    }
+  }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="plates" aria-hidden="true">
+        <span style="background:#C8352B"></span><span style="background:#2E5FA8"></span><span style="background:#D9B92C"></span><span style="background:#3C8A4C"></span>
+      </span>
+      <div>
+        <h1>Iron Cycle</h1>
+        <p>5/3/1 training-max planner</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn" id="copyBtn">Copy program</button>
+      <button class="btn primary" id="printBtn">Print</button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="controls" id="controls">
+
+      <section class="ctrl-group">
+        <h2>Unit &amp; training max</h2>
+        <div class="ctrl-row">
+          <label>Unit</label>
+          <div class="seg" id="unitSeg">
+            <button data-unit="kg">kg</button>
+            <button data-unit="lbs">lbs</button>
+          </div>
+        </div>
+        <div class="ctrl-row">
+          <label>Input mode</label>
+        </div>
+        <div class="seg" id="modeSeg" style="margin-bottom:10px;">
+          <button data-mode="1rm">1RM</button>
+          <button data-mode="tm">Training max</button>
+          <button data-mode="1+">Rep set</button>
+        </div>
+        <div id="liftInputs"></div>
+        <div class="field" style="margin-top:10px;">
+          <label>TM % of 1RM</label>
+          <input type="number" id="tmPctInput" min="80" max="100" step="1" value="90">
+        </div>
+      </section>
+
+      <section class="ctrl-group">
+        <h2>Rounding &amp; bar</h2>
+        <div class="field">
+          <label>Round to nearest</label>
+          <input type="number" id="roundInput" min="0.25" step="0.25">
+        </div>
+        <div class="field">
+          <label>Barbell weight</label>
+          <input type="number" id="barInput" min="0" step="0.5">
+        </div>
+      </section>
+
+      <section class="ctrl-group">
+        <h2>Programme</h2>
+        <div class="field">
+          <label>Template</label>
+          <select id="templateSelect"></select>
+        </div>
+        <p class="hint" id="templateBlurb"></p>
+        <div class="ctrl-row" style="margin-top:10px;"><label>Weeks to show</label></div>
+        <div class="weekchips" id="weekChips"></div>
+      </section>
+
+      <section class="ctrl-group">
+        <h2>Scheduling</h2>
+        <div class="field">
+          <label>Days per week</label>
+          <select id="daysSelect">
+            <option value="4">4</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+        <div class="ctrl-row"><label>Lift order</label></div>
+        <div class="order-presets" id="orderPresets">
+          <button data-preset="separated">Press / Deadlift / Bench / Squat</button>
+          <button data-preset="traditional">Squat / Bench / Deadlift / Press</button>
+        </div>
+        <div class="order-list" id="orderList"></div>
+        <p class="hint">With 3 days/week the fourth lift rotates in the following week so every lift still gets trained.</p>
+        <p class="hint" id="beginnersScheduleHint" style="display:none;">5/3/1 for Beginners uses a fixed 3-day split (Squat+Bench practice, Deadlift+Overhead Press, Bench+Squat practice) — the settings above have no effect while it's selected.</p>
+      </section>
+
+      <section class="ctrl-group">
+        <h2>Plates on hand</h2>
+        <p class="hint" style="margin:0 0 8px;">How many of each you own per side (i.e. per one side of the bar). Set to 0 to leave a plate out.</p>
+        <div class="plate-grid" id="plateGrid"></div>
+        <div class="ctrl-row" style="margin-top:10px;">
+          <label>Show plate loading</label>
+          <input type="checkbox" id="showPlatesCheck" checked>
+        </div>
+      </section>
+
+    </aside>
+
+    <main class="output" id="output">
+      <div class="program-head">
+        <input type="text" id="programTitle" class="program-title-input" placeholder="Untitled cycle">
+        <span class="program-sub" id="programSub"></span>
+      </div>
+
+      <div class="accessory-editor">
+        <h2>Accessory exercises</h2>
+        <p>Attached to each lift's day and applied across every week. Give an exercise a weight and it's folded into that day's plate loading; leave it unweighted for bodyweight or machine work.</p>
+        <div class="accessory-lifts" id="accessoryLifts"></div>
+      </div>
+
+      <div class="weektabs" id="weekTabs"></div>
+      <div id="weekPanels"></div>
+
+      <footer class="foot">
+        <span>Plate loading is sequenced to minimise changes between sets, not just picked from the heaviest plate down.</span>
+        <span>Independent build — not affiliated with Jim Wendler or any 5/3/1 app.</span>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------- constants ----------------
+  var LIFTS = ["ohp","bench","squat","deadlift"];
+  var LIFT_META = {
+    ohp:{name:"Overhead Press"}, bench:{name:"Bench Press"},
+    squat:{name:"Squat"}, deadlift:{name:"Deadlift"}
+  };
+  var TEMPLATES = {
+    standard:{name:"5/3/1 Standard", blurb:"Just the main lift. Add your own accessory work below."},
+    bbb:{name:"Boring But Big", blurb:"Main lift, then 5×10 @ 50% TM of the same lift."},
+    fsl:{name:"First Set Last", blurb:"Main lift, then 3×5 at that week's first work-set weight."},
+    pyramid:{name:"Pyramid", blurb:"Work sets ascend, then two back-off sets descend for max reps."},
+    fivespro:{name:"5's PRO", blurb:"Same three weekly percentages, but every set is a fixed 5 reps — no AMRAP."},
+    gvt:{name:"German Volume Training", blurb:"Main lift, then 10×10 @ 60% TM."},
+    triumvirate:{name:"Triumvirate", blurb:"Main lift plus two assistance slots for you to fill in below."},
+    beginners:{name:"5/3/1 for Beginners", blurb:"Fixed 3-day split, ignores the days/week and lift-order settings below. Day 1: Squat (full) + Bench practice sets. Day 2: Deadlift and Overhead Press, both full. Day 3: Bench (full) + Squat practice sets."}
+  };
+  var WEEK_SCHEMES = {
+    1:[{pct:.65,reps:5},{pct:.75,reps:5},{pct:.85,reps:5,amrap:true}],
+    2:[{pct:.70,reps:3},{pct:.80,reps:3},{pct:.90,reps:3,amrap:true}],
+    3:[{pct:.75,reps:5},{pct:.85,reps:3},{pct:.95,reps:1,amrap:true}],
+    4:[{pct:.40,reps:5},{pct:.50,reps:5},{pct:.60,reps:5}]
+  };
+  var WARMUP_SCHEME = [{pct:.40,reps:5},{pct:.50,reps:5},{pct:.60,reps:3}];
+  var WEEK_LABEL = {1:"Week 1",2:"Week 2",3:"Week 3",4:"Deload"};
+
+  var KG_PLATES = [
+    {w:25, color:"#C8352B"}, {w:20, color:"#2E5FA8"}, {w:15, color:"#D9B92C"},
+    {w:10, color:"#3C8A4C"}, {w:5, color:"#E7E2D4"}, {w:2.5, chrome:true},
+    {w:1.25, chrome:true}, {w:0.5, chrome:true}
+  ];
+  var LBS_PLATES = [
+    {w:45, color:"#2A2C30"}, {w:35, color:"#2E5FA8"}, {w:25, color:"#3C8A4C"},
+    {w:10, color:"#C8352B"}, {w:5, chrome:true}, {w:2.5, chrome:true}, {w:1.25, chrome:true}
+  ];
+  // plates owned per side, by default
+  var DEFAULT_PLATES_KG = {25:2, 20:2, 15:1, 10:2, 5:2, 2.5:2, 1.25:1};
+  var DEFAULT_PLATES_LBS = {45:2, 35:1, 25:2, 10:2, 5:2, 2.5:1};
+
+  var STORAGE_KEY = "iron-cycle-state-v3"; // v3: plate quantities changed from total-owned back to per-side
+  var EPS = 1e-6;
+
+  // ---------------- state ----------------
+  function defaultState(){
+    return {
+      unit:"kg",
+      lifts:{
+        ohp:{mode:"1rm", value:60, reps:1},
+        bench:{mode:"1rm", value:100, reps:1},
+        squat:{mode:"1rm", value:140, reps:1},
+        deadlift:{mode:"1rm", value:180, reps:1}
+      },
+      tmPct:90,
+      roundIncrement:2.5,
+      barWeight:20,
+      template:"bbb",
+      weeks:{1:true,2:true,3:true,4:true},
+      daysPerWeek:4,
+      liftOrder:["ohp","deadlift","bench","squat"],
+      plates:Object.assign({}, DEFAULT_PLATES_KG),
+      showPlates:true,
+      programTitle:"",
+      accessories:{
+        ohp:[{id:"ex1", name:"Dip", sets:3, reps:"10-15", weighted:false, weight:0}],
+        bench:[{id:"ex2", name:"Bicep Curl", sets:3, reps:"10-15", weighted:false, weight:0}],
+        squat:[],
+        deadlift:[{id:"ex3", name:"Hanging Leg Raise", sets:3, reps:"12-15", weighted:false, weight:0}]
+      }
+    };
+  }
+
+  var state = loadState();
+
+  function loadState(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return defaultState();
+      var parsed = JSON.parse(raw);
+      var d = defaultState();
+      // shallow-merge to survive future field additions
+      return Object.assign(d, parsed, {
+        lifts:Object.assign(d.lifts, parsed.lifts||{}),
+        weeks:Object.assign(d.weeks, parsed.weeks||{}),
+        accessories:Object.assign(d.accessories, parsed.accessories||{}),
+        plates:Object.assign({}, d.plates, parsed.plates||{})
+      });
+    }catch(e){ return defaultState(); }
+  }
+
+  var saveTimer = null;
+  function saveState(){
+    try{
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(function(){
+        try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+      }, 250);
+    }catch(e){}
+  }
+
+  // ---------------- maths ----------------
+  function roundTo(v, inc){
+    if(!inc || inc<=0) return v;
+    return Math.round(v/inc)*inc;
+  }
+  function epley1RM(weight, reps){
+    if(!reps || reps<=1) return weight;
+    return weight*(1+reps/30);
+  }
+  function computeTM(liftState, tmPct, roundIncrement){
+    var oneRM;
+    if(liftState.mode==="tm") return roundTo(liftState.value, roundIncrement);
+    if(liftState.mode==="1rm") oneRM = liftState.value;
+    else oneRM = epley1RM(liftState.value, liftState.reps||1);
+    return roundTo(oneRM*(tmPct/100), roundIncrement);
+  }
+
+  // ---------------- plate algorithm ----------------
+  // maxMap: {"<weight>.toFixed(4)": count available per side}. preUsed (optional):
+  // counts already committed elsewhere (e.g. still sitting on the bar), which count
+  // against the same physical inventory.
+  function greedyCombo(target, denomsDesc, maxMap, preUsed){
+    var remaining = target, combo = [];
+    var used = {};
+    if(preUsed) for(var pk in preUsed) used[pk] = preUsed[pk];
+    for(var i=0;i<denomsDesc.length;i++){
+      var d = denomsDesc[i];
+      var key = d.toFixed(4);
+      var max = maxMap && maxMap[key]!==undefined ? maxMap[key] : 0;
+      while(remaining + EPS >= d && (used[key]||0) < max){
+        combo.push(d); remaining -= d; used[key] = (used[key]||0)+1;
+      }
+    }
+    return {combo:combo, leftover:remaining};
+  }
+  function comboSum(c){ var s=0; for(var i=0;i<c.length;i++) s+=c[i]; return s; }
+  function countsOf(arr){
+    var m = {};
+    for(var i=0;i<arr.length;i++){ var k=arr[i].toFixed(4); m[k]=(m[k]||0)+1; }
+    return m;
+  }
+  function changeCost(a,b){
+    var ca=countsOf(a), cb=countsOf(b), keys={}, k;
+    for(k in ca) keys[k]=1; for(k in cb) keys[k]=1;
+    var cost=0;
+    for(k in keys) cost += Math.abs((ca[k]||0)-(cb[k]||0));
+    return cost;
+  }
+  // state.plates holds the number of each plate the user owns PER SIDE — directly
+  // the budget the loading algorithm works with.
+  function plateMaxMap(plates){
+    var m = {};
+    Object.keys(plates).forEach(function(k){
+      var perSide = plates[k]||0;
+      if(perSide>0) m[parseFloat(k).toFixed(4)] = perSide;
+    });
+    return m;
+  }
+  // Sequence a list of per-side target weights, minimising total plate changes
+  // between consecutive sets rather than recomputing a fresh greedy combo each time,
+  // and respecting a limited inventory of each denomination (you can't load a third
+  // 20kg plate per side if you only own two). When a target can't be hit exactly —
+  // wrong denominations available, or not enough plates on hand — falls back to the
+  // closest weight achievable rather than giving up.
+  function computeSessionPlates(targets, plates){
+    var maxMap = plateMaxMap(plates);
+    var desc = Object.keys(maxMap).map(function(k){ return parseFloat(k); }).sort(function(a,b){return b-a;});
+    var previous = [];
+    var out = [];
+    for(var i=0;i<targets.length;i++){
+      var target = targets[i];
+      var prevSum = comboSum(previous);
+      var diff = target - prevSum;
+      var candidateA;
+      if(diff >= -EPS){
+        var add = greedyCombo(diff, desc, maxMap, countsOf(previous));
+        candidateA = previous.concat(add.combo);
+      } else {
+        var trial = previous.slice().sort(function(a,b){return a-b;});
+        while(trial.length && comboSum(trial) > target+EPS) trial.shift();
+        var remainder = target - comboSum(trial);
+        candidateA = remainder > EPS ? trial.concat(greedyCombo(remainder, desc, maxMap, countsOf(trial)).combo) : trial;
+      }
+      var candidateB = greedyCombo(target, desc, maxMap, {}).combo;
+      // Accuracy comes first: a combo that actually hits the target beats one that
+      // merely reuses more of the previous plates but lands short. Only when both
+      // candidates are equally (in)accurate does plate-change count break the tie —
+      // otherwise "fewest changes" could silently pick a combo that's a whole plate
+      // off the requested weight just because it happened to need no changes.
+      var errA = Math.abs(comboSum(candidateA) - target);
+      var errB = Math.abs(comboSum(candidateB) - target);
+      var chosen;
+      if(Math.abs(errA - errB) > EPS){
+        chosen = errA < errB ? candidateA : candidateB;
+      } else {
+        chosen = changeCost(previous,candidateA) <= changeCost(previous,candidateB) ? candidateA : candidateB;
+      }
+      var achieved = comboSum(chosen);
+      out.push({combo:chosen.slice().sort(function(a,b){return b-a;}), exact: Math.abs(achieved-target) <= EPS});
+      previous = chosen;
+    }
+    return out;
+  }
+
+  // ---------------- programme generation ----------------
+  function assistanceForTemplate(templateId, weekNum, tm, roundIncrement){
+    if(weekNum===4) return []; // keep the deload light
+    if(templateId==="bbb") return [{label:"BBB", sets:5, reps:"10", weight:roundTo(tm*.5, roundIncrement), pct:.5}];
+    if(templateId==="fsl"){
+      var firstPct = WEEK_SCHEMES[weekNum][0].pct;
+      return [{label:"FSL", sets:3, reps:"5", weight:roundTo(tm*firstPct, roundIncrement), pct:firstPct}];
+    }
+    if(templateId==="gvt") return [{label:"GVT", sets:10, reps:"10", weight:roundTo(tm*.6, roundIncrement), pct:.6}];
+    if(templateId==="pyramid"){
+      var s2 = WEEK_SCHEMES[weekNum][1].pct, s1 = WEEK_SCHEMES[weekNum][0].pct;
+      return [
+        {label:"Back-off", sets:1, reps:"AMRAP", weight:roundTo(tm*s2, roundIncrement), pct:s2},
+        {label:"Back-off", sets:1, reps:"AMRAP", weight:roundTo(tm*s1, roundIncrement), pct:s1}
+      ];
+    }
+    return [];
+  }
+
+  function ensureTriumvirateDefaults(){
+    if(state.template!=="triumvirate") return;
+    LIFTS.forEach(function(lift){
+      if(state.accessories[lift].length===0){
+        state.accessories[lift].push({id:lift+"-a1", name:"Assistance 1", sets:5, reps:"10-15", weighted:false, weight:0});
+        state.accessories[lift].push({id:lift+"-a2", name:"Assistance 2", sets:5, reps:"10-15", weighted:false, weight:0});
+      }
+    });
+  }
+
+  // Returns one descriptor per training day: {main, light, lightMode, dayLabel}.
+  // `light`, when set, is a second lift trained on the same calendar day as `main`.
+  // lightMode "practice" means a fixed, non-waving set (see buildDay); "full" means
+  // the light lift gets its own complete warmup+work wave, same as a main lift.
+  function scheduleForWeek(weekNum){
+    if(state.template==="beginners"){
+      // Wendler's 5/3/1 for Beginners: a fixed 3-day split, independent of the
+      // days-per-week / lift-order controls. Squat and bench alternate as each
+      // other's main day for extra frequency, with the other getting a fixed
+      // practice set the same day. Deadlift and press are each trained once a
+      // week, sharing the third day, both at full intensity — neither is reduced
+      // to a practice set for the other.
+      return [
+        {main:"squat", light:"bench", lightMode:"practice", dayLabel:1},
+        {main:"deadlift", light:"ohp", lightMode:"full", dayLabel:2},
+        {main:"bench", light:"squat", lightMode:"practice", dayLabel:3}
+      ];
+    }
+    if(state.daysPerWeek===4){
+      return state.liftOrder.map(function(lift, i){ return {main:lift, light:null, dayLabel:i+1}; });
+    }
+    var order = state.liftOrder;
+    var offset = ((weekNum-1)*3) % order.length;
+    var days = [];
+    for(var i=0;i<3;i++) days.push({main:order[(offset+i)%order.length], light:null, dayLabel:i+1});
+    return days;
+  }
+
+  function includedWeeks(){
+    return [1,2,3,4].filter(function(w){ return state.weeks[w]; });
+  }
+
+  // Fixed practice-set percentages for a Beginners "light" partner lift (its own
+  // TM, unchanged week to week — it doesn't follow the 5/3/1 wave, and is skipped
+  // on the deload week like other templates' assistance work).
+  var LIGHT_PCTS = [.55, .65, .75];
+
+  // Warmup + work-set wave for one lift's own TM on a given week. Shared by a day's
+  // main lift and, for a Beginners "full" light partner (e.g. Overhead Press
+  // alongside Deadlift), the light lift too — it's not reduced, it just trains once
+  // a week instead of twice.
+  function buildWave(tm, weekNum){
+    var isDeload = weekNum===4;
+    var roundIncrement = state.roundIncrement;
+    var warmups = [];
+    if(!isDeload){
+      warmups = WARMUP_SCHEME.map(function(s){
+        return {label:"Warm-up", reps:s.reps, weight:roundTo(tm*s.pct, roundIncrement), pct:s.pct, amrap:false, warmup:true};
+      });
+    }
+    var scheme = WEEK_SCHEMES[weekNum];
+    var workSets = scheme.map(function(s){
+      var reps = s.reps;
+      var amrap = !!s.amrap;
+      if(state.template==="fivespro" && weekNum!==4){ reps = 5; amrap = false; }
+      return {label:"Work", reps:reps, weight:roundTo(tm*s.pct, roundIncrement), pct:s.pct, amrap:amrap, warmup:false};
+    });
+    return {warmups:warmups, workSets:workSets};
+  }
+
+  function buildDay(descriptor, weekNum, tms){
+    var lift = descriptor.main;
+    var tm = tms[lift];
+    var isDeload = weekNum===4;
+    var roundIncrement = state.roundIncrement;
+    var wave = buildWave(tm, weekNum);
+    var warmups = wave.warmups, workSets = wave.workSets;
+    var assistance = assistanceForTemplate(state.template, weekNum, tm, roundIncrement).map(function(a){
+      return {label:a.label, reps:a.reps, weight:a.weight, pct:a.pct, sets:a.sets, warmup:false, amrap:false, isAssistance:true};
+    });
+    var lightBlock = [];
+    if(descriptor.light){
+      if(descriptor.lightMode==="full"){
+        var lightWave = buildWave(tms[descriptor.light], weekNum);
+        lightBlock = lightWave.warmups.concat(lightWave.workSets);
+      } else if(!isDeload){
+        var lightTm = tms[descriptor.light];
+        lightBlock = LIGHT_PCTS.map(function(pct){
+          return {label:"Practice", reps:5, weight:roundTo(lightTm*pct, roundIncrement), pct:pct, sets:3, warmup:false, amrap:false, isAssistance:true};
+        });
+      }
+    }
+    var accessories = (state.accessories[lift]||[]).map(function(ex){
+      // accessory weights are whatever the user typed, not rounded to the barbell increment
+      return {
+        id:ex.id, name:ex.name, sets:ex.sets, reps:ex.reps,
+        weighted:ex.weighted, weight:ex.weighted ? ex.weight : 0
+      };
+    });
+
+    // build the plate-loading sequence for every barbell set in display order
+    var loadable = [];
+    warmups.forEach(function(s){ loadable.push(s); });
+    workSets.forEach(function(s){ loadable.push(s); });
+    assistance.forEach(function(s){ loadable.push(s); });
+    lightBlock.forEach(function(s){ loadable.push(s); });
+    accessories.filter(function(a){return a.weighted;}).forEach(function(a){ loadable.push(a); });
+
+    // a target below the bar's own weight can't actually be loaded lighter than an
+    // empty bar, so the displayed weight floors to the bar — not just the plate
+    // column, which would otherwise show "bar only" next to a physically-impossible
+    // sub-bar number. This applies whether or not the plate breakdown is shown.
+    loadable.forEach(function(s){
+      var perSide = (s.weight - state.barWeight)/2;
+      s.belowBar = perSide < -EPS;
+      if(s.belowBar) s.weight = state.barWeight;
+    });
+
+    if(state.showPlates){
+      var targets = [];
+      var refs = [];
+      loadable.forEach(function(s){
+        var perSide = Math.max(0, (s.weight - state.barWeight)/2);
+        s.perSide = perSide;
+        if(perSide > EPS){ targets.push(perSide); refs.push(s); }
+      });
+      var combos = computeSessionPlates(targets, state.plates);
+      refs.forEach(function(ref, i){ ref.plateCombo = combos[i].combo; ref.plateApprox = !combos[i].exact; });
+    }
+
+    return {
+      lift:lift, dayLabel:descriptor.dayLabel, lightLift:descriptor.light, lightMode:descriptor.lightMode,
+      warmups:warmups, workSets:workSets, assistance:assistance, lightBlock:lightBlock, accessories:accessories
+    };
+  }
+
+  function generateProgram(){
+    ensureTriumvirateDefaults();
+    var tms = {};
+    LIFTS.forEach(function(l){ tms[l] = computeTM(state.lifts[l], state.tmPct, state.roundIncrement); });
+    var weeks = includedWeeks().map(function(w){
+      var descriptors = scheduleForWeek(w);
+      return {week:w, days:descriptors.map(function(d){ return buildDay(d, w, tms); })};
+    });
+    return {tms:tms, weeks:weeks};
+  }
+
+  // ---------------- rendering helpers ----------------
+  function fmtWeight(w){
+    var r = Math.round(w*100)/100;
+    return (r % 1 === 0 ? r.toFixed(0) : r.toFixed(2).replace(/0$/,"").replace(/\.$/,"")) ;
+  }
+  function unitLabel(){ return state.unit; }
+
+  function plateBarHTML(combo){
+    if(!combo || combo.length===0) return "";
+    var maxW = state.unit==="kg" ? 25 : 45;
+    var html = '<div class="bar" aria-hidden="true"><span class="sleeve"></span>';
+    combo.forEach(function(w){
+      var scale = 0.45 + 0.55*Math.min(1, w/maxW);
+      var height = Math.round(18*scale);
+      var width = Math.round(7 + 5*scale);
+      var meta = plateMeta(w);
+      var style = "width:"+width+"px;height:"+height+"px;";
+      var cls = "plate";
+      if(meta && meta.chrome) cls += " chrome";
+      else style += "background:"+(meta?meta.color:"#9a9a9e")+";";
+      html += '<span class="'+cls+'" style="'+style+'" title="'+fmtWeight(w)+' '+unitLabel()+'"></span>';
+    });
+    html += '</div>';
+    return html;
+  }
+  function plateMeta(w){
+    var list = state.unit==="kg" ? KG_PLATES : LBS_PLATES;
+    for(var i=0;i<list.length;i++) if(Math.abs(list[i].w-w)<EPS) return list[i];
+    return null;
+  }
+  function plateTextHTML(combo){
+    if(!combo || combo.length===0) return "";
+    // combo already arrives sorted heaviest-first (see computeSessionPlates), and that
+    // order matters here: the plate that carries over unchanged from the previous set
+    // is typically the heaviest one, so keep it listed first rather than letting
+    // Object.keys silently re-sort numeric-looking keys ("5","25") into ascending order.
+    var order = [];
+    var counts = {};
+    combo.forEach(function(w){
+      var k = fmtWeight(w);
+      if(!Object.prototype.hasOwnProperty.call(counts,k)){ counts[k]=0; order.push(k); }
+      counts[k]++;
+    });
+    return order.map(function(k){ return k+(counts[k]>1?"×"+counts[k]:""); }).join(" + ");
+  }
+
+  function plateCellHTML(s){
+    if(!state.showPlates) return "";
+    if(s.belowBar) return '<div class="below-bar">bar only</div>';
+    if(!s.plateCombo || s.plateCombo.length===0) return '<div class="below-bar">no plates selected</div>';
+    var note = s.plateApprox ? " (closest available)" : "";
+    return plateBarHTML(s.plateCombo) + '<div class="hint" style="margin-top:2px;">'+plateTextHTML(s.plateCombo)+note+'</div>';
+  }
+
+  function setRowHTML(s){
+    var repsDisplay = s.reps;
+    if(s.amrap) repsDisplay = String(s.reps)+"<span class=\"amrap-tag\">+</span>";
+    var sets = s.sets || 1;
+    var pctText = s.pct ? Math.round(s.pct*100)+"%" : "";
+    var wtText = fmtWeight(s.weight)+" "+unitLabel();
+    var plateHTML = plateCellHTML(s);
+    var rowClass = s.warmup ? "warmup-row" : "";
+    var label = s.warmup ? "Warm-up" : (s.isAssistance ? s.label : "");
+    return '<tr class="'+rowClass+'">'
+      + '<td class="reps">'+(sets>1?sets+"×":"")+repsDisplay+(label?'<div class="hint">'+label+'</div>':"")+'</td>'
+      + '<td class="wt">'+wtText+'</td>'
+      + '<td class="pct">'+pctText+'</td>'
+      + '<td>'+plateHTML+'</td>'
+      + '<td class="print-col"><span class="chk"></span></td>'
+      + '</tr>';
+  }
+
+  function accessoryRowHTML(ex){
+    var repsCell = ex.sets+'×'+ex.reps+'<div class="hint">'+escapeAttr(ex.name||"Exercise")+'</div>';
+    var chk = '<td class="print-col"><span class="chk"></span></td>';
+    if(!ex.weighted){
+      return '<tr class="bw-row"><td class="reps">'+repsCell+'</td><td colspan="3">bodyweight</td>'+chk+'</tr>';
+    }
+    var plateHTML = plateCellHTML(ex);
+    return '<tr class="bw-row">'
+      + '<td class="reps">'+repsCell+'</td>'
+      + '<td class="wt">'+fmtWeight(ex.weight)+' '+unitLabel()+'</td>'
+      + '<td class="pct"></td>'
+      + '<td>'+plateHTML+'</td>'+chk+'</tr>';
+  }
+
+  function dayCardHTML(day){
+    var meta = LIFT_META[day.lift];
+    var rows = day.warmups.concat(day.workSets, day.assistance).map(setRowHTML).join("");
+    var accessoryRows = day.accessories.map(accessoryRowHTML).join("");
+    var table = '<table class="set-table"><thead><tr><th>Set</th><th>Weight</th><th>%TM</th><th>Plates / side</th><th class="print-col">Done</th></tr></thead><tbody>'+rows+accessoryRows+'</tbody></table>';
+    var lightSection = "";
+    if(day.lightLift && day.lightBlock.length){
+      var lightMeta = LIFT_META[day.lightLift];
+      var lightRows = day.lightBlock.map(setRowHTML).join("");
+      // "full" (e.g. Overhead Press alongside Deadlift): a second lift trained at
+      // full intensity, once a week — same section styling, just no "practice" label
+      var sectionTitle = day.lightMode==="full" ? lightMeta.name : lightMeta.name+' — practice sets';
+      lightSection = '<div><div class="section-label">'+sectionTitle+'</div>'
+        + '<table class="set-table"><thead><tr><th>Set</th><th>Weight</th><th>%TM</th><th>Plates / side</th><th class="print-col">Done</th></tr></thead><tbody>'+lightRows+'</tbody></table></div>';
+    } else if(day.lightLift){
+      // deload week: a "practice" light partner's fixed sets are skipped entirely, same as
+      // other templates' assistance work (a "full" light partner never hits this branch —
+      // it keeps waving through deload just like any main lift)
+      var lightMetaOff = LIFT_META[day.lightLift];
+      lightSection = '<p class="empty-note">'+lightMetaOff.name+' practice sets skipped on the deload week.</p>';
+    }
+    return '<div class="day-card">'
+      + '<div class="day-head"><h3>'+meta.name+'</h3><span class="day-idx">Day '+day.dayLabel+'</span></div>'
+      + '<div class="day-body">'
+      + table
+      + lightSection
+      + '</div></div>';
+  }
+
+  function render(){
+    ensureTriumvirateDefaults();
+    renderControls();
+    var program = generateProgram();
+    renderOutput(program);
+    saveState();
+  }
+
+  // ---------------- controls rendering ----------------
+  function renderControls(){
+    // unit segment
+    document.querySelectorAll("#unitSeg button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.unit===state.unit);
+    });
+    document.querySelectorAll("#modeSeg button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode===state.lifts.ohp.mode);
+    });
+
+    var liftInputs = document.getElementById("liftInputs");
+    liftInputs.innerHTML = LIFTS.map(function(lift){
+      var ls = state.lifts[lift];
+      var mode = ls.mode;
+      var repsField = mode==="1+" ? '<input type="number" class="reps-input" data-lift="'+lift+'" data-field="reps" value="'+ls.reps+'" min="1" max="20">' : "";
+      var label = mode==="1rm" ? "1RM" : mode==="tm" ? "TM" : "reps @";
+      return '<div class="lift-row">'
+        + '<div class="lift-name">'+LIFT_META[lift].name+'</div>'
+        + '<div class="lift-inputs">'
+        + (mode==="1+" ? repsField : "")
+        + '<input type="number" data-lift="'+lift+'" data-field="value" value="'+ls.value+'" step="0.5" min="0">'
+        + '<span class="unit-tag">'+state.unit+(mode==="1+"?" (@ "+ls.reps+" reps)":"")+'</span>'
+        + '</div></div>';
+    }).join("");
+
+    document.getElementById("tmPctInput").value = state.tmPct;
+    document.getElementById("roundInput").value = state.roundIncrement;
+    document.getElementById("barInput").value = state.barWeight;
+
+    var templateSelect = document.getElementById("templateSelect");
+    if(templateSelect.options.length===0){
+      templateSelect.innerHTML = Object.keys(TEMPLATES).map(function(id){
+        return '<option value="'+id+'">'+TEMPLATES[id].name+'</option>';
+      }).join("");
+    }
+    templateSelect.value = state.template;
+    document.getElementById("templateBlurb").textContent = TEMPLATES[state.template].blurb;
+
+    var weekChips = document.getElementById("weekChips");
+    weekChips.innerHTML = [1,2,3,4].map(function(w){
+      return '<label class="chip"><input type="checkbox" data-week="'+w+'" '+(state.weeks[w]?"checked":"")+'>'+WEEK_LABEL[w]+'</label>';
+    }).join("");
+
+    document.getElementById("daysSelect").value = state.daysPerWeek;
+
+    var isBeginners = state.template==="beginners";
+    document.getElementById("daysSelect").disabled = isBeginners;
+    document.getElementById("beginnersScheduleHint").style.display = isBeginners ? "" : "none";
+    document.querySelectorAll("#orderPresets button").forEach(function(b){ b.disabled = isBeginners; });
+
+    document.querySelectorAll("#orderPresets button").forEach(function(b){
+      var preset = b.dataset.preset==="separated" ? ["ohp","deadlift","bench","squat"] : ["squat","bench","deadlift","ohp"];
+      b.classList.toggle("active", JSON.stringify(preset)===JSON.stringify(state.liftOrder));
+    });
+    var orderList = document.getElementById("orderList");
+    orderList.innerHTML = state.liftOrder.map(function(lift, i){
+      return '<div class="order-item"><span>'+(i+1)+'. '+LIFT_META[lift].name+'</span>'
+        + '<span class="arrows">'
+        + '<button data-move="up" data-idx="'+i+'" '+(isBeginners||i===0?"disabled":"")+'>↑</button>'
+        + '<button data-move="down" data-idx="'+i+'" '+(isBeginners||i===state.liftOrder.length-1?"disabled":"")+'>↓</button>'
+        + '</span></div>';
+    }).join("");
+
+    var plateList = state.unit==="kg" ? KG_PLATES : LBS_PLATES;
+    var plateGrid = document.getElementById("plateGrid");
+    plateGrid.innerHTML = plateList.map(function(p){
+      var qty = state.plates[String(p.w)] || 0;
+      var swatchStyle = p.chrome ? "background:repeating-linear-gradient(135deg,#9a9a9e,#9a9a9e 2px,#c9c9cd 2px,#c9c9cd 4px);" : "background:"+p.color+";";
+      return '<label class="plate-check">'
+        + '<span class="plate-swatch" style="'+swatchStyle+'"></span>'
+        + '<span class="plate-label">'+fmtWeight(p.w)+'</span>'
+        + '<input type="number" class="plate-qty" data-plate-qty="'+p.w+'" value="'+qty+'" min="0" max="40" step="1">'
+        + '</label>';
+    }).join("");
+    document.getElementById("showPlatesCheck").checked = state.showPlates;
+
+    document.getElementById("programTitle").value = state.programTitle;
+
+    renderAccessoryEditor();
+  }
+
+  function renderAccessoryEditor(){
+    var el = document.getElementById("accessoryLifts");
+    el.innerHTML = LIFTS.map(function(lift){
+      var rows = (state.accessories[lift]||[]).map(function(ex){
+        return '<div class="exrow" data-exid="'+ex.id+'" data-lift="'+lift+'">'
+          + '<input type="text" data-field="name" value="'+escapeAttr(ex.name)+'" placeholder="Exercise">'
+          + '<input type="number" data-field="sets" value="'+ex.sets+'" min="1" max="10" title="sets">'
+          + '<span class="hint">×</span>'
+          + '<input type="text" data-field="reps" value="'+escapeAttr(String(ex.reps))+'" style="width:56px" title="reps">'
+          + '<label class="bw"><input type="checkbox" data-field="weighted" '+(ex.weighted?"checked":"")+'> weighted</label>'
+          + (ex.weighted ? '<input type="number" class="wt-input" data-field="weight" value="'+ex.weight+'" step="0.5" title="weight ('+state.unit+')">' : "")
+          + '<button class="rm" data-field="remove" title="remove">×</button>'
+          + '</div>';
+      }).join("");
+      return '<div class="accessory-lift">'
+        + '<h3><span class="dot"></span>'+LIFT_META[lift].name+'</h3>'
+        + rows
+        + '<button class="add-ex" data-add-lift="'+lift+'">+ Add exercise</button>'
+        + '</div>';
+    }).join("");
+  }
+  function escapeAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+
+  // ---------------- output rendering ----------------
+  function renderOutput(program){
+    document.getElementById("programSub").textContent = "TM — OHP " + fmtWeight(program.tms.ohp) + " · Bench " + fmtWeight(program.tms.bench) + " · Squat " + fmtWeight(program.tms.squat) + " · Deadlift " + fmtWeight(program.tms.deadlift) + " " + unitLabel();
+
+    var tabs = document.getElementById("weekTabs");
+    var panels = document.getElementById("weekPanels");
+    if(program.weeks.length===0){
+      tabs.innerHTML = "";
+      panels.innerHTML = '<p class="empty-note">Select at least one week to generate a programme.</p>';
+      return;
+    }
+    var activeWeek = panels.dataset.active && program.weeks.some(function(w){return String(w.week)===panels.dataset.active;})
+      ? panels.dataset.active : String(program.weeks[0].week);
+    panels.dataset.active = activeWeek;
+
+    tabs.innerHTML = program.weeks.map(function(w){
+      return '<button class="weektab '+(String(w.week)===activeWeek?"active":"")+'" data-week-tab="'+w.week+'">'+WEEK_LABEL[w.week]+'</button>';
+    }).join("");
+
+    panels.innerHTML = program.weeks.map(function(w){
+      var cards = w.days.map(dayCardHTML).join("");
+      // the week heading is print-only: on screen the tabs above already say which
+      // week is showing, but print shows every week on its own page at once
+      var printHeading = '<h2 class="week-print-heading">'+WEEK_LABEL[w.week]+'</h2>';
+      var cardsClass = "day-cards" + (w.days.length===3 ? " count-3" : "");
+      return '<div class="week-panel '+(String(w.week)===activeWeek?"active":"")+'" data-week-panel="'+w.week+'">'+printHeading+'<div class="'+cardsClass+'">'+cards+'</div></div>';
+    }).join("");
+  }
+
+  // ---------------- events ----------------
+  document.getElementById("controls").addEventListener("click", function(e){
+    var unitBtn = e.target.closest("[data-unit]");
+    if(unitBtn){ setUnit(unitBtn.dataset.unit); return; }
+    var modeBtn = e.target.closest("[data-mode]");
+    if(modeBtn){ LIFTS.forEach(function(l){ state.lifts[l].mode = modeBtn.dataset.mode; }); render(); return; }
+    var presetBtn = e.target.closest("[data-preset]");
+    if(presetBtn){
+      state.liftOrder = presetBtn.dataset.preset==="separated" ? ["ohp","deadlift","bench","squat"] : ["squat","bench","deadlift","ohp"];
+      render(); return;
+    }
+    var moveBtn = e.target.closest("[data-move]");
+    if(moveBtn){
+      var idx = parseInt(moveBtn.dataset.idx,10);
+      var dir = moveBtn.dataset.move==="up" ? -1 : 1;
+      var arr = state.liftOrder;
+      var j = idx+dir;
+      if(j>=0 && j<arr.length){ var tmp=arr[idx]; arr[idx]=arr[j]; arr[j]=tmp; render(); }
+      return;
+    }
+  });
+
+  document.getElementById("controls").addEventListener("input", function(e){
+    var t = e.target;
+    if(t.matches("[data-lift][data-field]")){
+      // update output only, not the whole control panel: rebuilding #liftInputs
+      // on every keystroke would blow away focus while the user is still typing
+      var lift = t.dataset.lift, field = t.dataset.field;
+      state.lifts[lift][field] = parseFloat(t.value)||0;
+      renderOutputOnly(); saveState(); return;
+    }
+    if(t.id==="tmPctInput"){ state.tmPct = parseFloat(t.value)||90; render(); return; }
+    if(t.id==="roundInput"){ state.roundIncrement = parseFloat(t.value)||2.5; render(); return; }
+    if(t.id==="barInput"){ state.barWeight = parseFloat(t.value)||0; render(); return; }
+    if(t.id==="templateSelect"){ state.template = t.value; render(); return; }
+    if(t.id==="daysSelect"){ state.daysPerWeek = parseInt(t.value,10); render(); return; }
+    if(t.matches("[data-week]")){ state.weeks[t.dataset.week] = t.checked; render(); return; }
+    if(t.matches("[data-plate-qty]")){
+      // renderOutputOnly, not a full render: #plateGrid is rebuilt via innerHTML each
+      // full render, which would steal focus mid-keystroke the same way the lift-max
+      // inputs did before that was fixed.
+      var pw = t.dataset.plateQty;
+      state.plates[pw] = Math.max(0, parseInt(t.value,10)||0);
+      renderOutputOnly(); saveState(); return;
+    }
+    if(t.id==="showPlatesCheck"){ state.showPlates = t.checked; render(); return; }
+  });
+
+  document.getElementById("programTitle").addEventListener("input", function(e){
+    state.programTitle = e.target.value;
+    saveState();
+  });
+
+  document.getElementById("accessoryLifts").addEventListener("input", function(e){
+    var row = e.target.closest("[data-exid]");
+    if(!row) return;
+    var lift = row.dataset.lift, id = row.dataset.exid;
+    var ex = (state.accessories[lift]||[]).find(function(x){return x.id===id;});
+    if(!ex) return;
+    var field = e.target.dataset.field;
+    if(field==="name") ex.name = e.target.value;
+    else if(field==="sets") ex.sets = parseInt(e.target.value,10)||1;
+    else if(field==="reps") ex.reps = e.target.value;
+    else if(field==="weight") ex.weight = parseFloat(e.target.value)||0;
+    renderOutputOnly();
+    saveState();
+  });
+  document.getElementById("accessoryLifts").addEventListener("change", function(e){
+    if(e.target.dataset.field==="weighted"){
+      var row = e.target.closest("[data-exid]");
+      var lift = row.dataset.lift, id = row.dataset.exid;
+      var ex = (state.accessories[lift]||[]).find(function(x){return x.id===id;});
+      if(ex){ ex.weighted = e.target.checked; render(); }
+    }
+  });
+  document.getElementById("accessoryLifts").addEventListener("click", function(e){
+    if(e.target.dataset.field==="remove"){
+      var row = e.target.closest("[data-exid]");
+      var lift = row.dataset.lift, id = row.dataset.exid;
+      state.accessories[lift] = state.accessories[lift].filter(function(x){return x.id!==id;});
+      render();
+      return;
+    }
+    var addLiftBtn = e.target.closest("[data-add-lift]");
+    if(addLiftBtn){
+      var lift = addLiftBtn.dataset.addLift;
+      state.accessories[lift].push({id:"ex-"+Date.now()+Math.random().toString(36).slice(2,6), name:"", sets:3, reps:"10", weighted:false, weight:0});
+      render();
+      return;
+    }
+  });
+
+  document.getElementById("weekTabs").addEventListener("click", function(e){
+    var btn = e.target.closest("[data-week-tab]");
+    if(!btn) return;
+    document.getElementById("weekPanels").dataset.active = btn.dataset.weekTab;
+    var program = generateProgram();
+    renderOutput(program);
+  });
+
+  function renderOutputOnly(){ renderOutput(generateProgram()); }
+
+  function setUnit(unit){
+    if(unit===state.unit) return;
+    var factor = unit==="kg" ? (1/2.20462) : 2.20462;
+    LIFTS.forEach(function(l){ state.lifts[l].value = Math.round(state.lifts[l].value*factor*10)/10; });
+    Object.keys(state.accessories).forEach(function(l){
+      state.accessories[l].forEach(function(ex){ if(ex.weighted) ex.weight = Math.round(ex.weight*factor*10)/10; });
+    });
+    state.unit = unit;
+    state.roundIncrement = unit==="kg" ? 2.5 : 5;
+    state.barWeight = unit==="kg" ? 20 : 45;
+    state.plates = Object.assign({}, unit==="kg" ? DEFAULT_PLATES_KG : DEFAULT_PLATES_LBS);
+    render();
+  }
+
+  // ---------------- copy / print ----------------
+  function buildPlainText(program){
+    var lines = [];
+    lines.push(state.programTitle || "5/3/1 Cycle");
+    lines.push("TM: OHP " + fmtWeight(program.tms.ohp) + unitLabel() + ", Bench " + fmtWeight(program.tms.bench) + unitLabel() + ", Squat " + fmtWeight(program.tms.squat) + unitLabel() + ", Deadlift " + fmtWeight(program.tms.deadlift) + unitLabel());
+    lines.push("");
+    program.weeks.forEach(function(w){
+      lines.push("== " + WEEK_LABEL[w.week] + " ==");
+      w.days.forEach(function(day){
+        lines.push("Day " + day.dayLabel + " — " + LIFT_META[day.lift].name + ":");
+        day.warmups.concat(day.workSets, day.assistance).forEach(function(s){
+          var sets = s.sets||1;
+          var reps = s.reps + (s.amrap?"+":"");
+          lines.push("  " + (sets>1?sets+"x":"") + reps + " @ " + fmtWeight(s.weight) + unitLabel() + (s.pct?" ("+Math.round(s.pct*100)+"%)":""));
+        });
+        day.accessories.forEach(function(ex){
+          lines.push("  " + ex.sets + "x" + ex.reps + " " + ex.name + (ex.weighted?" @ "+fmtWeight(ex.weight)+unitLabel():" (bodyweight)"));
+        });
+        if(day.lightLift){
+          if(day.lightBlock.length){
+            var lightHeading = day.lightMode==="full" ? LIFT_META[day.lightLift].name + ":" : LIFT_META[day.lightLift].name + " practice sets (fixed):";
+            lines.push("  " + lightHeading);
+            day.lightBlock.forEach(function(s){
+              var sets = s.sets||1;
+              var reps = s.reps + (s.amrap?"+":"");
+              lines.push("    " + (sets>1?sets+"x":"") + reps + " @ " + fmtWeight(s.weight) + unitLabel() + (s.pct?" ("+Math.round(s.pct*100)+"%)":""));
+            });
+          } else {
+            lines.push("  " + LIFT_META[day.lightLift].name + " practice sets skipped (deload)");
+          }
+        }
+        lines.push("");
+      });
+    });
+    return lines.join("\n");
+  }
+
+  document.getElementById("copyBtn").addEventListener("click", function(){
+    var text = buildPlainText(generateProgram());
+    var btn = document.getElementById("copyBtn");
+    function done(ok){ btn.textContent = ok ? "Copied" : "Copy failed"; setTimeout(function(){ btn.textContent = "Copy program"; }, 1500); }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){done(true);}).catch(function(){done(false);});
+    } else {
+      try{
+        var ta = document.createElement("textarea");
+        ta.value = text; ta.style.position="fixed"; ta.style.opacity="0";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        done(true);
+      }catch(e){ done(false); }
+    }
+  });
+
+  document.getElementById("printBtn").addEventListener("click", printProgram);
+
+  function printProgram(){
+    // window.print() called from inside this page often does nothing visible: when
+    // the page is embedded in a sandboxed iframe (as a published artifact preview
+    // is), the browser can silently swallow the call — no dialog, no error, nothing.
+    // Opening a plain new tab with the same rendered content and printing THAT
+    // sidesteps the sandbox entirely, since the new tab is a normal top-level page.
+    var printWin = window.open("", "_blank");
+    if(!printWin){
+      alert("Your browser blocked the print tab. Allow pop-ups for this page and try again, or open this page's own link directly and print from there.");
+      return;
+    }
+    // don't assume the <style>/<link>/<title> tags actually live under document.head —
+    // an artifact's page skeleton can leave them as siblings under <body> instead — so
+    // pull them out by selector rather than copying document.head, which may be near-empty
+    var titleTag = document.querySelector("title");
+    var titleHTML = titleTag ? titleTag.outerHTML : "<title>Iron Cycle</title>";
+    var linkTags = Array.prototype.map.call(document.querySelectorAll("link"), function(el){ return el.outerHTML; }).join("");
+    var styleTags = Array.prototype.map.call(document.querySelectorAll("style"), function(el){ return el.outerHTML; }).join("");
+    var appHTML = document.querySelector(".app").outerHTML;
+    printWin.document.open();
+    printWin.document.write("<!doctype html><html><head><meta charset=\"utf-8\">" + titleHTML + linkTags + styleTags + "</head><body>" + appHTML + "</body></html>");
+    printWin.document.close();
+    // give the new tab a moment to lay out (and its fonts a moment to load) before
+    // invoking print, rather than firing print on a still-empty page
+    printWin.addEventListener("load", function(){
+      setTimeout(function(){ printWin.focus(); printWin.print(); }, 300);
+    });
+  }
+
+  // ---------------- init ----------------
+  render();
+})();
+</script>
