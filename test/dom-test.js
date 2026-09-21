@@ -111,10 +111,12 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   log('Front Squat shows the exact weight (61.5) and plates', /61\.5/.test(squatCard.textContent));
 
   // sanity: the accessory weight should feed into the plate combo, not just display text
-  const exRowInCard = Array.from(squatCard.querySelectorAll('tr')).find(tr => tr.textContent.includes('Front Squat'));
-  const hasBar = exRowInCard.querySelector('.bar') !== null;
-  log('Front Squat (61.5kg, not reachable exactly in 1.25kg steps) still renders a best-effort plate bar', hasBar);
-  log('inexact loading is flagged as approximate rather than silently wrong', /closest available/.test(exRowInCard.textContent));
+  const frontSquatLabel = Array.from(squatCard.querySelectorAll('.section-label')).find(el => el.textContent.includes('Front Squat'));
+  const frontSquatList = frontSquatLabel ? frontSquatLabel.nextElementSibling : null;
+  const hasBadges = frontSquatList ? frontSquatList.querySelectorAll('.badge').length > 0 : false;
+  log('Front Squat (61.5kg, not reachable exactly in 1.25kg steps) still renders a best-effort plate badge', hasBadges);
+  const approxBadge = frontSquatList ? frontSquatList.querySelector('.badge.approx') : null;
+  log('inexact loading is flagged as approximate rather than silently wrong', !!approxBadge && /closest available/.test(approxBadge.getAttribute('title') || ''));
 
   // --- focus retention: typing a training max should not rebuild the input out from under the user ---
   const ohpMaxInput = doc.querySelector('[data-lift="ohp"][data-field="value"]');
@@ -167,6 +169,15 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   const cardTitle = c => c.querySelector('h3').textContent;
   const cardDayIdx = c => c.querySelector('.day-idx').textContent;
+  // pulls the weight out of a set-row's "5 × 82.5 kg" style load text
+  const rowWeight = row => {
+    const m = row.querySelector('.set-load').textContent.match(/×\s*([\d.]+)/);
+    return m ? parseFloat(m[1]) : NaN;
+  };
+  const firstSetWeight = list => {
+    const row = list && list.querySelector('.set-row');
+    return row ? rowWeight(row) : NaN;
+  };
   const squatDay = beginnersDayCards.find(c => cardTitle(c) === 'Squat');
   const deadliftDay = beginnersDayCards.find(c => cardTitle(c) === 'Deadlift');
   const benchDay = beginnersDayCards.find(c => cardTitle(c) === 'Bench Press');
@@ -181,8 +192,8 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   // warmup+work wave), not the reduced 3-set practice block Squat/Bench give each
   // other — so it should show 6 rows (3 warmup + 3 work), same shape as any main lift.
   if (deadliftDay) {
-    const ohpTable = deadliftDay.querySelectorAll('table.set-table')[1];
-    const ohpRows = ohpTable ? ohpTable.querySelectorAll('tbody tr').length : 0;
+    const ohpList = deadliftDay.querySelectorAll('.set-list')[1];
+    const ohpRows = ohpList ? ohpList.querySelectorAll('.set-row').length : 0;
     log('Overhead Press gets a full 6-row wave (warmup+work), not a 3-row practice block', ohpRows === 6);
   } else {
     log('Overhead Press gets a full 6-row wave (warmup+work), not a 3-row practice block', false);
@@ -195,10 +206,9 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   if (benchTmMatch && squatDay) {
     const benchTm = parseFloat(benchTmMatch[1]);
     const expected55 = Math.round(benchTm * 0.55 / 2.5) * 2.5;
-    // the practice block is the second <table> in the Squat day card (after the main-lift table)
-    const practiceTable = squatDay.querySelectorAll('table.set-table')[1];
-    const firstWtCell = practiceTable && practiceTable.querySelector('tbody tr td.wt');
-    const actualWeight = firstWtCell ? parseFloat(firstWtCell.textContent) : NaN;
+    // the practice block is the second .set-list in the Squat day card (after the main-lift list)
+    const practiceList = squatDay.querySelectorAll('.set-list')[1];
+    const actualWeight = firstSetWeight(practiceList);
     log('practice-set weight on the Squat day matches 55% of Bench\'s own TM', actualWeight === expected55);
   } else {
     log('practice-set weight on the Squat day matches 55% of Bench\'s own TM', false);
@@ -211,8 +221,8 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
     const week4SquatDay = Array.from(week4Panel.querySelectorAll('.day-card')).find(c => cardTitle(c) === 'Squat');
     log('Squat/Bench practice sets are skipped on the deload week', !!week4SquatDay && /skipped on the deload week/.test(week4SquatDay.textContent));
     const week4DeadliftDay = Array.from(week4Panel.querySelectorAll('.day-card')).find(c => cardTitle(c) === 'Deadlift');
-    const week4OhpTable = week4DeadliftDay ? week4DeadliftDay.querySelectorAll('table.set-table')[1] : null;
-    const week4OhpRows = week4OhpTable ? week4OhpTable.querySelectorAll('tbody tr').length : 0;
+    const week4OhpList = week4DeadliftDay ? week4DeadliftDay.querySelectorAll('.set-list')[1] : null;
+    const week4OhpRows = week4OhpList ? week4OhpList.querySelectorAll('.set-row').length : 0;
     log('Overhead Press still trains on the deload week (3 work rows, warmups skipped like any main lift)', week4OhpRows === 3);
   } else {
     log('Squat/Bench practice sets are skipped on the deload week', false);
@@ -231,12 +241,16 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   ohpInputAgain.value = '200';
   ohpInputAgain.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   await wait(20);
-  // 1x 20kg per side owned = at most one 20kg per side, ever
-  const hintTexts = Array.from(doc.querySelectorAll('.day-card .hint')).map(h => h.textContent);
-  const anyDoubleTwenty = hintTexts.some(t => /20×2|20×3|20×4/.test(t));
+  // 1x 20kg per side owned = at most one 20kg badge per set, ever (a second 20 would
+  // show as a second separate badge reading "20", not a combined "20×2")
+  const setRowsForInventoryCheck = Array.from(doc.querySelectorAll('.day-card .set-row'));
+  const anyDoubleTwenty = setRowsForInventoryCheck.some(row => {
+    const twenties = Array.from(row.querySelectorAll('.badge')).filter(b => b.textContent.trim() === '20');
+    return twenties.length > 1;
+  });
   log('plate inventory cap respected: no set uses more 20kg per side than the 1 owned', !anyDoubleTwenty);
   // 0x 15kg per side owned = should never appear in any plate breakdown
-  const any15Used = hintTexts.some(t => /(^|\D)15(×\d+)?(\D|$)/.test(t));
+  const any15Used = Array.from(doc.querySelectorAll('.day-card .badge')).some(b => b.textContent.trim() === '15');
   log('a plate set to 0 per side is never used', !any15Used);
   log('no errors after inventory-constrained generation', errors.length === 0);
 
@@ -267,30 +281,20 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   await wait(20);
   const squatCardRepro = Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Squat');
   log('squat day card found for plate-accuracy regression check', !!squatCardRepro);
-  // only the main lift's own table: the "Front Squat" accessory added earlier (61.5kg,
-  // genuinely unreachable in 1.25kg steps) is SUPPOSED to say "closest available" —
+  // only the main lift's own set-list: the "Front Squat" accessory added earlier
+  // (61.5kg, genuinely unreachable in 1.25kg steps) is SUPPOSED to say "closest
+  // available" and lives in its own section now, so it's naturally excluded here —
   // this check is about the barbell work sets, which should now always be exact
   // given the inventory used here.
-  const mainTable = squatCardRepro ? squatCardRepro.querySelectorAll('table.set-table')[0] : null;
-  // accessory rows (class bw-row, e.g. the deliberately-unreachable Front Squat added
-  // earlier) legitimately say "closest available" — exclude them from this check
-  const barbellRows = mainTable ? Array.from(mainTable.querySelectorAll('tbody tr:not(.bw-row)')) : [];
-  const barbellText = barbellRows.map(tr => tr.textContent).join(' ');
+  const mainList = squatCardRepro ? squatCardRepro.querySelectorAll('.set-list')[0] : null;
+  const barbellRows = mainList ? Array.from(mainList.querySelectorAll('.set-row')) : [];
+  const barbellText = barbellRows.map(row => row.textContent).join(' ');
   log('no "closest available" fallback text on the main lift sets when an exact combo is reachable', barbellRows.length > 0 && !/closest available/.test(barbellText));
   // cross-check the 65% row (31.25kg/side, 82.5kg total) actually sums to the target,
   // not just short by one plate the way the bug report showed
-  const wtCells = mainTable ? Array.from(mainTable.querySelectorAll('tbody tr:not(.bw-row) td.wt')) : [];
-  const row65 = wtCells.find(td => td.textContent.trim() === '82.5 kg');
-  const row65Tr = row65 ? row65.closest('tr') : null;
-  const row65PlateText = row65Tr ? row65Tr.querySelector('.hint')?.textContent || '' : '';
-  const plateSum = row65PlateText
-    .replace(/\s*\(.*\)\s*$/, '') // strip a trailing "(closest available)" note, if any
-    .split('+')
-    .map(part => {
-      const m = part.trim().match(/^([\d.]+)(?:×(\d+))?$/);
-      return m ? parseFloat(m[1]) * (m[2] ? parseInt(m[2], 10) : 1) : 0;
-    })
-    .reduce((a, b) => a + b, 0);
+  const row65 = barbellRows.find(row => row.querySelector('.set-load').textContent.includes('82.5'));
+  const row65Badges = row65 ? Array.from(row65.querySelectorAll('.badge')).map(b => parseFloat(b.textContent)) : [];
+  const plateSum = row65Badges.reduce((a, b) => a + b, 0);
   log('82.5kg row plate breakdown sums to the correct 31.25kg/side (not short a plate)', Math.abs(plateSum - 31.25) < 1e-6);
 
   // --- regression: a target below the bar's own weight can't physically be loaded
@@ -301,66 +305,37 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   ohpLowInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   await wait(20);
   const ohpCardLow = Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Overhead Press');
-  const ohpWtCells = ohpCardLow ? Array.from(ohpCardLow.querySelectorAll('table.set-table td.wt')) : [];
-  const anySubBarWeight = ohpWtCells.some(td => parseFloat(td.textContent) < 20);
-  log('a below-bar target displays as the bar weight, never a lighter impossible number', ohpWtCells.length > 0 && !anySubBarWeight);
+  const ohpRows = ohpCardLow ? Array.from(ohpCardLow.querySelectorAll('.set-row')) : [];
+  const ohpWeights = ohpRows.map(rowWeight);
+  const anySubBarWeight = ohpWeights.some(w => w < 20);
+  log('a below-bar target displays as the bar weight, never a lighter impossible number', ohpWeights.length > 0 && !anySubBarWeight);
   const anyBarOnlyNote = ohpCardLow && /bar only/.test(ohpCardLow.textContent);
   log('a below-bar target is still flagged "bar only" in the plates column', !!anyBarOnlyNote);
 
-  // --- plate breakdown text: heaviest plate listed first (the one most likely to
-  // stay on the bar between sets), and no "per side" suffix ---
-  const allPlateHints = Array.from(doc.querySelectorAll('.day-card .hint'))
-    .map(h => h.textContent.replace(/\s*\(.*\)\s*$/, ''))
-    .filter(t => /^[\d.]+(×\d+)?(\s\+\s[\d.]+(×\d+)?)*$/.test(t));
-  log('found plate breakdown hints to check ordering on', allPlateHints.length > 0);
-  const allDescending = allPlateHints.every(t => {
-    const weights = t.split('+').map(part => parseFloat(part.trim()));
+  // --- plate badges: heaviest plate listed first (the one most likely to stay on the
+  // bar between sets), and no "per side" suffix anywhere ---
+  const badgeRowsForOrder = Array.from(doc.querySelectorAll('.day-card .set-row'))
+    .filter(row => row.querySelectorAll('.badge:not(.note)').length > 0);
+  log('found plate breakdown badges to check ordering on', badgeRowsForOrder.length > 0);
+  const allDescending = badgeRowsForOrder.every(row => {
+    const weights = Array.from(row.querySelectorAll('.badge:not(.note)')).map(b => parseFloat(b.textContent));
     return weights.every((w, i) => i === 0 || w <= weights[i - 1] + 1e-9);
   });
   log('plate breakdowns list the heaviest plate first', allDescending);
-  const noPerSideSuffix = !Array.from(doc.querySelectorAll('.day-card .hint')).some(h => /per side/.test(h.textContent));
+  const noPerSideSuffix = !Array.from(doc.querySelectorAll('.day-card .badge')).some(b => /per side/.test(b.textContent));
   log('plate breakdown text no longer says "per side"', noPerSideSuffix);
 
-  // --- print button: window.print() called from inside a sandboxed iframe (which is
-  // what a published artifact preview is) can be silently swallowed by the browser —
-  // no dialog, no error. Fixed by opening a plain new tab with the rendered content
-  // and printing THAT instead, which isn't sandboxed. Verify the button no longer
-  // calls window.print() directly, and that it builds a real printable page. ---
-  let openedWith = null;
-  const fakeWin = {
-    document: {
-      _html: '',
-      open() {}, close() {},
-      write(html) { this._html += html; },
-    },
-    addEventListener(evt, fn) { if (evt === 'load') this._onload = fn; },
-    focus() { this.focused = true; },
-    print() { this.printed = true; },
-  };
-  const originalOpen = dom.window.open;
-  dom.window.open = (...args) => { openedWith = args; return fakeWin; };
+  // --- print button: this is a plain hosted page (not a sandboxed artifact preview),
+  // so it just calls window.print() directly ---
+  let printCalled = false;
+  const originalPrint = dom.window.print;
+  dom.window.print = () => { printCalled = true; };
   doc.getElementById('printBtn').click();
-  log('print button opens a new tab rather than calling window.print() on this page', openedWith !== null && openedWith[1] === '_blank');
-  log('the new tab is given the page\'s current rendered content (styles + program)', /<style/.test(fakeWin.document._html) && fakeWin.document._html.includes('day-card'));
-  // simulate the new tab finishing its own load, then wait past the print() timeout
-  if (fakeWin._onload) fakeWin._onload();
-  await wait(400);
-  log('print() is invoked on the new tab once it has loaded, not the artifact page itself', fakeWin.printed === true);
-  dom.window.open = originalOpen;
-
-  // pop-up blocked case: window.open returning null/undefined must not throw
-  dom.window.open = () => undefined;
-  let popupBlockedThrew = false;
-  try { doc.getElementById('printBtn').click(); } catch (e) { popupBlockedThrew = true; }
-  log('a blocked pop-up is handled gracefully (no crash) rather than failing silently or throwing', !popupBlockedThrew);
-  dom.window.open = originalOpen;
+  log('print button calls window.print() directly', printCalled === true);
+  dom.window.print = originalPrint;
   log('no errors after exercising the print button', errors.length === 0);
 
   // --- print output structure ---
-  const printCols = doc.querySelectorAll('.print-col');
-  log('print-only "Done" column exists on set tables', printCols.length > 0);
-  const chkBoxes = doc.querySelectorAll('.chk');
-  log('print-only checkbox spans exist for each set', chkBoxes.length > 0);
   const weekHeadings = doc.querySelectorAll('.week-print-heading');
   log('print-only week headings exist (one per week panel)', weekHeadings.length === doc.querySelectorAll('.week-panel').length && weekHeadings.length > 0);
   const dayCardsWrapper = doc.querySelectorAll('.week-panel .day-cards');

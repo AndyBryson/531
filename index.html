@@ -143,69 +143,61 @@
   .day-head .day-idx{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim);}
   .day-body{padding:14px 16px; display:flex; flex-direction:column; gap:14px;}
 
-  table.set-table{width:100%; border-collapse:collapse; font-size:13px;}
-  table.set-table th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); font-weight:600; padding:0 8px 6px 0; border-bottom:1px solid var(--rule);}
-  table.set-table td{padding:5px 8px 5px 0; border-bottom:1px solid var(--rule); vertical-align:middle;}
-  table.set-table tr:last-child td{border-bottom:none;}
-  table.set-table td.reps{white-space:nowrap;}
-  table.set-table td.wt{font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap;}
-  table.set-table td.pct{color:var(--text-dim); font-size:12px;}
-  .amrap-tag{color:var(--accent); font-weight:700; margin-left:2px;}
-  .warmup-row td{color:var(--text-dim);}
+  .set-list{display:flex; flex-direction:column; gap:6px;}
+  .set-row{display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:6px 10px;}
+  .set-row.warmup{opacity:.6;}
+  .set-main{display:flex; flex-direction:column; gap:1px; min-width:0;}
+  .set-load{font-family:var(--mono); font-variant-numeric:tabular-nums; font-weight:600; font-size:13px; white-space:nowrap;}
+  .set-row.bw .set-load{font-style:italic; font-weight:500; color:var(--text-dim);}
+  .set-meta{font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
+  .amrap-tag{color:var(--accent); font-weight:700; margin-left:1px;}
   .section-label{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); font-weight:600; margin-bottom:2px;}
-  .print-col{display:none;}
-  .chk{display:inline-block;}
 
-  .bar{display:flex; align-items:center; gap:1px; height:18px;}
-  .bar .sleeve{background:var(--rule); height:4px; flex:0 0 10px; border-radius:2px;}
-  .bar .plate{border-radius:2px; border:1px solid rgba(0,0,0,.18);}
-  .bar .plate.chrome{background:repeating-linear-gradient(135deg,#9a9a9e,#9a9a9e 2px,#bdbdc1 2px,#bdbdc1 4px);}
-
-  .bw-row td{color:var(--text-dim); font-style:italic;}
-  .below-bar{color:var(--warn); font-size:11px;}
+  .set-badges{display:flex; gap:4px; flex:none; flex-wrap:wrap; justify-content:flex-end;}
+  .badge{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:11px; color:var(--text-dim); background:var(--surface); border:1px solid var(--border); border-radius:5px; padding:1px 6px; line-height:1.6; white-space:nowrap;}
+  .badge.approx{border-style:dashed;}
+  .badge.note{font-family:var(--sans); font-style:italic;}
 
   .empty-note{font-size:12.5px; color:var(--text-dim); font-style:italic;}
 
   footer.foot{margin-top:30px; padding-top:16px; border-top:1px solid var(--border); font-size:11.5px; color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
 
+  @page{size:A4 landscape; margin:8mm;}
+
   @media print{
-    .controls, .topbar-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
-    body{background:#fff; color:#000; font-size:10.5px;}
+    .controls, .topbar, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
+    body{background:#fff; color:#000; font-size:9px;}
     .app{max-width:none;}
     .shell{display:block; padding:0;}
-    .program-head{margin-bottom:4px;}
-    .program-title-input{font-size:20px; border-bottom:none; color:#000;}
-    .program-sub{color:#444;}
+    .program-head{margin-bottom:2px;}
+    .program-title-input{font-size:14px; padding:0; border-bottom:none; color:#000;}
+    .program-sub{color:#444; font-size:9px;}
 
     /* every week prints, one to a page, instead of only the tab currently open on screen */
     .week-panel{display:block !important; break-before:page; page-break-before:always;}
     .week-panel:first-child{break-before:auto; page-break-before:avoid;}
     .week-print-heading{
-      display:block; font-size:15px; text-transform:uppercase; letter-spacing:.06em;
-      border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:10px;
+      display:block; font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+      border-bottom:2px solid #000; padding-bottom:3px; margin-bottom:6px;
     }
-    /* two lifts per row by default, so a week fits on far fewer pages, but a 3-day
-       week (e.g. Beginners) gets its own row so all three sit side by side instead
-       of leaving an awkward gap */
-    .day-cards{display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start;}
-    .day-cards.count-3{grid-template-columns:1fr 1fr 1fr;}
+    /* all of a week's days sit in a single row — the page is landscape and wide
+       enough for that, and a single row (rather than wrapping to a second row)
+       is what keeps a whole week on one page */
+    .day-cards{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; align-items:start;}
+    .day-cards.count-3{grid-template-columns:repeat(3,1fr);}
 
-    .day-card{break-inside:avoid; box-shadow:none; border:1px solid #888; border-radius:0;}
-    .day-head{background:#eee;}
-    table.set-table th, table.set-table td{border-bottom:1px solid #ccc; padding:3px 6px 3px 0;}
+    .day-card{break-inside:avoid; box-shadow:none; border:1px solid #999; border-radius:0;}
+    .day-head{background:#eee; padding:4px 6px;}
+    .day-head h3{font-size:11px;}
+    .day-body{padding:5px; gap:5px;}
+    .set-list{gap:2px;}
+    .set-row{break-inside:avoid; background:#fafafa; border-color:#ccc; padding:1px 4px; gap:4px;}
+    .set-row.warmup{opacity:1; background:#fff;}
+    .set-load{font-size:9px;}
+    .set-meta{font-size:7px;}
+    .badge{font-size:7px; padding:0 3px; line-height:1.3;}
+    .section-label{font-size:9px; margin-bottom:1px;}
     .hint{color:#555;}
-    .below-bar{color:#000; font-style:italic;}
-
-    /* plate colours rarely survive to paper reliably, so print falls back to the
-       weight badges (e.g. "25 + 2.5") already generated alongside the bar graphic */
-    .bar{display:none;}
-
-    .print-col{display:table-cell !important;}
-    thead .print-col{text-align:center;}
-    .chk{
-      width:11px; height:11px; border:1px solid #000; border-radius:2px;
-      display:inline-block; margin:0 auto;
-    }
   }
 </style>
 
@@ -709,99 +701,76 @@
   }
   function unitLabel(){ return state.unit; }
 
-  function plateBarHTML(combo){
-    if(!combo || combo.length===0) return "";
-    var maxW = state.unit==="kg" ? 25 : 45;
-    var html = '<div class="bar" aria-hidden="true"><span class="sleeve"></span>';
-    combo.forEach(function(w){
-      var scale = 0.45 + 0.55*Math.min(1, w/maxW);
-      var height = Math.round(18*scale);
-      var width = Math.round(7 + 5*scale);
-      var meta = plateMeta(w);
-      var style = "width:"+width+"px;height:"+height+"px;";
-      var cls = "plate";
-      if(meta && meta.chrome) cls += " chrome";
-      else style += "background:"+(meta?meta.color:"#9a9a9e")+";";
-      html += '<span class="'+cls+'" style="'+style+'" title="'+fmtWeight(w)+' '+unitLabel()+'"></span>';
-    });
-    html += '</div>';
-    return html;
-  }
-  function plateMeta(w){
-    var list = state.unit==="kg" ? KG_PLATES : LBS_PLATES;
-    for(var i=0;i<list.length;i++) if(Math.abs(list[i].w-w)<EPS) return list[i];
-    return null;
-  }
-  function plateTextHTML(combo){
-    if(!combo || combo.length===0) return "";
-    // combo already arrives sorted heaviest-first (see computeSessionPlates), and that
-    // order matters here: the plate that carries over unchanged from the previous set
-    // is typically the heaviest one, so keep it listed first rather than letting
-    // Object.keys silently re-sort numeric-looking keys ("5","25") into ascending order.
-    var order = [];
-    var counts = {};
-    combo.forEach(function(w){
-      var k = fmtWeight(w);
-      if(!Object.prototype.hasOwnProperty.call(counts,k)){ counts[k]=0; order.push(k); }
-      counts[k]++;
-    });
-    return order.map(function(k){ return k+(counts[k]>1?"×"+counts[k]:""); }).join(" + ");
-  }
-
-  function plateCellHTML(s){
+  function plateBadgesHTML(s){
     if(!state.showPlates) return "";
-    if(s.belowBar) return '<div class="below-bar">bar only</div>';
-    if(!s.plateCombo || s.plateCombo.length===0) return '<div class="below-bar">no plates selected</div>';
-    var note = s.plateApprox ? " (closest available)" : "";
-    return plateBarHTML(s.plateCombo) + '<div class="hint" style="margin-top:2px;">'+plateTextHTML(s.plateCombo)+note+'</div>';
+    if(s.belowBar) return '<span class="badge note">bar only</span>';
+    if(!s.plateCombo || s.plateCombo.length===0) return '<span class="badge note">no plates selected</span>';
+    var approx = s.plateApprox;
+    // combo already arrives sorted heaviest-first (see computeSessionPlates), so the
+    // badges read heaviest to lightest, same order a lifter would load the bar in
+    return s.plateCombo.map(function(w){
+      var title = fmtWeight(w)+' '+unitLabel()+(approx?' (closest available)':'');
+      return '<span class="badge'+(approx?' approx':'')+'" title="'+title+'">'+fmtWeight(w)+'</span>';
+    }).join("");
   }
 
+  // renders one physical set — callers expand a {sets:N} spec into N of these first,
+  // so every row on the page corresponds to one set to actually perform
   function setRowHTML(s){
-    var repsDisplay = s.reps;
-    if(s.amrap) repsDisplay = String(s.reps)+"<span class=\"amrap-tag\">+</span>";
-    var sets = s.sets || 1;
+    var repsDisplay = String(s.reps) + (s.amrap ? '<span class="amrap-tag">+</span>' : "");
+    var loadText = repsDisplay+' × '+fmtWeight(s.weight)+' '+unitLabel();
     var pctText = s.pct ? Math.round(s.pct*100)+"%" : "";
-    var wtText = fmtWeight(s.weight)+" "+unitLabel();
-    var plateHTML = plateCellHTML(s);
-    var rowClass = s.warmup ? "warmup-row" : "";
     var label = s.warmup ? "Warm-up" : (s.isAssistance ? s.label : "");
-    return '<tr class="'+rowClass+'">'
-      + '<td class="reps">'+(sets>1?sets+"×":"")+repsDisplay+(label?'<div class="hint">'+label+'</div>':"")+'</td>'
-      + '<td class="wt">'+wtText+'</td>'
-      + '<td class="pct">'+pctText+'</td>'
-      + '<td>'+plateHTML+'</td>'
-      + '<td class="print-col"><span class="chk"></span></td>'
-      + '</tr>';
+    var metaParts = [pctText, label].filter(function(x){ return x; });
+    var metaHTML = metaParts.length ? '<span class="set-meta">'+metaParts.join(" · ")+'</span>' : "";
+    var rowClass = s.warmup ? "set-row warmup" : "set-row";
+    return '<div class="'+rowClass+'">'
+      + '<div class="set-main"><span class="set-load">'+loadText+'</span>'+metaHTML+'</div>'
+      + '<div class="set-badges">'+plateBadgesHTML(s)+'</div>'
+      + '</div>';
   }
 
-  function accessoryRowHTML(ex){
-    var repsCell = ex.sets+'×'+ex.reps+'<div class="hint">'+escapeAttr(ex.name||"Exercise")+'</div>';
-    var chk = '<td class="print-col"><span class="chk"></span></td>';
-    if(!ex.weighted){
-      return '<tr class="bw-row"><td class="reps">'+repsCell+'</td><td colspan="3">bodyweight</td>'+chk+'</tr>';
+  // a {sets:N} spec (BBB, FSL, GVT, pyramid back-offs, Beginners practice sets) is one
+  // logical block repeated N times at the same weight — expand it into N individual
+  // rows so each line on the page is one set to perform, not a set×reps summary
+  function expandSets(list){
+    var out = [];
+    list.forEach(function(s){
+      var n = s.sets || 1;
+      for(var i=0;i<n;i++) out.push(s);
+    });
+    return out;
+  }
+
+  function accessoryRowsHTML(ex){
+    var n = ex.sets || 1;
+    var rows = "";
+    for(var i=0;i<n;i++){
+      var loadText = ex.weighted ? (ex.reps+' × '+fmtWeight(ex.weight)+' '+unitLabel()) : (ex.reps+' reps');
+      rows += '<div class="set-row'+(ex.weighted?"":" bw")+'">'
+        + '<div class="set-main"><span class="set-load">'+loadText+'</span></div>'
+        + '<div class="set-badges">'+(ex.weighted ? plateBadgesHTML(ex) : "")+'</div>'
+        + '</div>';
     }
-    var plateHTML = plateCellHTML(ex);
-    return '<tr class="bw-row">'
-      + '<td class="reps">'+repsCell+'</td>'
-      + '<td class="wt">'+fmtWeight(ex.weight)+' '+unitLabel()+'</td>'
-      + '<td class="pct"></td>'
-      + '<td>'+plateHTML+'</td>'+chk+'</tr>';
+    return rows;
+  }
+  function accessoryBlockHTML(ex){
+    return '<div><div class="section-label">'+escapeAttr(ex.name||"Exercise")+'</div>'
+      + '<div class="set-list">'+accessoryRowsHTML(ex)+'</div></div>';
   }
 
   function dayCardHTML(day){
     var meta = LIFT_META[day.lift];
-    var rows = day.warmups.concat(day.workSets, day.assistance).map(setRowHTML).join("");
-    var accessoryRows = day.accessories.map(accessoryRowHTML).join("");
-    var table = '<table class="set-table"><thead><tr><th>Set</th><th>Weight</th><th>%TM</th><th>Plates / side</th><th class="print-col">Done</th></tr></thead><tbody>'+rows+accessoryRows+'</tbody></table>';
+    var mainRows = expandSets(day.warmups.concat(day.workSets, day.assistance)).map(setRowHTML).join("");
+    var mainList = '<div class="set-list">'+mainRows+'</div>';
     var lightSection = "";
     if(day.lightLift && day.lightBlock.length){
       var lightMeta = LIFT_META[day.lightLift];
-      var lightRows = day.lightBlock.map(setRowHTML).join("");
+      var lightRows = expandSets(day.lightBlock).map(setRowHTML).join("");
       // "full" (e.g. Overhead Press alongside Deadlift): a second lift trained at
       // full intensity, once a week — same section styling, just no "practice" label
       var sectionTitle = day.lightMode==="full" ? lightMeta.name : lightMeta.name+' — practice sets';
-      lightSection = '<div><div class="section-label">'+sectionTitle+'</div>'
-        + '<table class="set-table"><thead><tr><th>Set</th><th>Weight</th><th>%TM</th><th>Plates / side</th><th class="print-col">Done</th></tr></thead><tbody>'+lightRows+'</tbody></table></div>';
+      lightSection = '<div><div class="section-label">'+sectionTitle+'</div><div class="set-list">'+lightRows+'</div></div>';
     } else if(day.lightLift){
       // deload week: a "practice" light partner's fixed sets are skipped entirely, same as
       // other templates' assistance work (a "full" light partner never hits this branch —
@@ -809,11 +778,13 @@
       var lightMetaOff = LIFT_META[day.lightLift];
       lightSection = '<p class="empty-note">'+lightMetaOff.name+' practice sets skipped on the deload week.</p>';
     }
+    var accessorySections = day.accessories.map(accessoryBlockHTML).join("");
     return '<div class="day-card">'
       + '<div class="day-head"><h3>'+meta.name+'</h3><span class="day-idx">Day '+day.dayLabel+'</span></div>'
       + '<div class="day-body">'
-      + table
+      + mainList
       + lightSection
+      + accessorySections
       + '</div></div>';
   }
 
@@ -1129,36 +1100,7 @@
     }
   });
 
-  document.getElementById("printBtn").addEventListener("click", printProgram);
-
-  function printProgram(){
-    // window.print() called from inside this page often does nothing visible: when
-    // the page is embedded in a sandboxed iframe (as a published artifact preview
-    // is), the browser can silently swallow the call — no dialog, no error, nothing.
-    // Opening a plain new tab with the same rendered content and printing THAT
-    // sidesteps the sandbox entirely, since the new tab is a normal top-level page.
-    var printWin = window.open("", "_blank");
-    if(!printWin){
-      alert("Your browser blocked the print tab. Allow pop-ups for this page and try again, or open this page's own link directly and print from there.");
-      return;
-    }
-    // don't assume the <style>/<link>/<title> tags actually live under document.head —
-    // an artifact's page skeleton can leave them as siblings under <body> instead — so
-    // pull them out by selector rather than copying document.head, which may be near-empty
-    var titleTag = document.querySelector("title");
-    var titleHTML = titleTag ? titleTag.outerHTML : "<title>Iron Cycle</title>";
-    var linkTags = Array.prototype.map.call(document.querySelectorAll("link"), function(el){ return el.outerHTML; }).join("");
-    var styleTags = Array.prototype.map.call(document.querySelectorAll("style"), function(el){ return el.outerHTML; }).join("");
-    var appHTML = document.querySelector(".app").outerHTML;
-    printWin.document.open();
-    printWin.document.write("<!doctype html><html><head><meta charset=\"utf-8\">" + titleHTML + linkTags + styleTags + "</head><body>" + appHTML + "</body></html>");
-    printWin.document.close();
-    // give the new tab a moment to lay out (and its fonts a moment to load) before
-    // invoking print, rather than firing print on a still-empty page
-    printWin.addEventListener("load", function(){
-      setTimeout(function(){ printWin.focus(); printWin.print(); }, 300);
-    });
-  }
+  document.getElementById("printBtn").addEventListener("click", function(){ window.print(); });
 
   // ---------------- init ----------------
   render();
