@@ -4,9 +4,11 @@ A 5/3/1 (Wendler) training-max calculator. Single self-contained HTML file, no b
 
 Independent build — not affiliated with Jim Wendler or any 5/3/1 app.
 
+**Live:** https://andybryson.github.io/531/
+
 ## Use it
 
-Open `index.html` in a browser. State persists in `localStorage`.
+Open `index.html` in a browser, or use the link above. State is encoded in the URL itself, so the address bar is always a shareable link to the exact program on screen.
 
 ## Features
 
@@ -15,7 +17,7 @@ Open `index.html` in a browser. State persists in `localStorage`.
 - Plate-loading calculator: sequences a session's sets to minimise plate changes between sets (not just heaviest-first), respects a limited per-side plate inventory, flags inexact loads as "closest available"
 - Custom accessory exercises per lift, with optional weight and plate loading
 - 4-day or 3-day/week scheduling with reorderable lift order
-- Print layout: one week per page, two (or three, for a 3-day week) lifts per row, checkbox column for tracking sets on paper
+- Print layout: A4 landscape, one week per page, a day per column
 
 ### 5/3/1 for Beginners
 
