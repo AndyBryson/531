@@ -655,7 +655,7 @@
       } else if(!isDeload){
         var lightTm = tms[descriptor.light];
         lightBlock = LIGHT_PCTS.map(function(pct){
-          return {label:"Practice", reps:5, weight:roundTo(lightTm*pct, roundIncrement), pct:pct, sets:3, warmup:false, amrap:false, isAssistance:true};
+          return {label:"Practice", reps:5, weight:roundTo(lightTm*pct, roundIncrement), pct:pct, sets:1, warmup:false, amrap:false, isAssistance:true};
         });
       }
     }
