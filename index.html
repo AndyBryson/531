@@ -229,10 +229,11 @@
           <button data-mode="1+">Rep set</button>
         </div>
         <div id="liftInputs"></div>
-        <div class="field" style="margin-top:10px;">
+        <div class="field" id="tmPctField" style="margin-top:10px;">
           <label>TM % of 1RM</label>
           <input type="number" id="tmPctInput" min="80" max="100" step="1" value="90">
         </div>
+        <p class="hint" id="repSetHint" style="display:none; margin-top:10px;">Your rep set is treated as this cycle's week 3 top set (95% TM ×1+) — the training max and every other week's weights are back-calculated from it.</p>
       </section>
 
       <section class="ctrl-group">
@@ -447,12 +448,17 @@
     if(!reps || reps<=1) return weight;
     return weight*(1+reps/30);
   }
+  // the week 3 top set (95% TM x1+) is what "1+" refers to throughout the app
+  var TOP_SET_PCT = WEEK_SCHEMES[3][2].pct;
   function computeTM(liftState, tmPct, roundIncrement){
-    var oneRM;
     if(liftState.mode==="tm") return roundTo(liftState.value, roundIncrement);
-    if(liftState.mode==="1rm") oneRM = liftState.value;
-    else oneRM = epley1RM(liftState.value, liftState.reps||1);
-    return roundTo(oneRM*(tmPct/100), roundIncrement);
+    if(liftState.mode==="1rm") return roundTo(liftState.value*(tmPct/100), roundIncrement);
+    // "1+" (rep set) mode: the entered performance IS what we want to use for
+    // the top "1+" set next cycle, not a true 1RM to be shaved down again — so
+    // back-calculate TM (and from it, every other week's weights) from that,
+    // instead of projecting a full 1RM and then also applying tmPct.
+    var topSetWeight = epley1RM(liftState.value, liftState.reps||1);
+    return roundTo(topSetWeight/TOP_SET_PCT, roundIncrement);
   }
 
   // ---------------- plate algorithm ----------------
@@ -819,6 +825,9 @@
     document.querySelectorAll("#modeSeg button").forEach(function(b){
       b.classList.toggle("active", b.dataset.mode===state.lifts.ohp.mode);
     });
+    var isRepSetMode = state.lifts.ohp.mode==="1+";
+    document.getElementById("tmPctField").style.display = isRepSetMode ? "none" : "";
+    document.getElementById("repSetHint").style.display = isRepSetMode ? "" : "none";
 
     var liftInputs = document.getElementById("liftInputs");
     liftInputs.innerHTML = LIFTS.map(function(lift){
