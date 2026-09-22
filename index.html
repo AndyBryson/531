@@ -896,7 +896,7 @@
     document.getElementById("showPlatesCheck").checked = state.showPlates;
 
     document.getElementById("programTitle").value = state.programTitle;
-    document.title = state.programTitle ? "531 Planner — "+state.programTitle : "531 Planner";
+    document.title = state.programTitle ? "531 Planner "+state.programTitle : "531 Planner";
 
     renderAccessoryEditor();
   }
@@ -1003,7 +1003,7 @@
 
   document.getElementById("programTitle").addEventListener("input", function(e){
     state.programTitle = e.target.value;
-    document.title = state.programTitle ? "531 Planner — "+state.programTitle : "531 Planner";
+    document.title = state.programTitle ? "531 Planner "+state.programTitle : "531 Planner";
     saveState();
   });
 
