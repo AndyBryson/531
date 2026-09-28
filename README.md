@@ -14,7 +14,7 @@ Open `index.html` in a browser, or use the link above. State is encoded in the U
 
 - Training max from 1RM, direct TM entry, or a rep-set (Epley) input
 - Templates: Standard, Boring But Big, First Set Last, Pyramid, 5's PRO, GVT, Triumvirate, 5/3/1 for Beginners, Standard + partner FSL
-- Plate-loading calculator: sequences a session's sets to minimise plate changes between sets (not just heaviest-first), respects a limited per-side plate inventory, flags inexact loads as "closest available"
+- Plate-loading calculator: treats each side of the bar as a stack (plates only come on and off at the outside), picks each set's plates and their loading order to minimise total plate moves across the session, lists plates innermost first, respects a limited per-side plate inventory, flags inexact loads as "closest available"
 - Custom accessory exercises per lift, with optional weight and plate loading
 - 4-day or 3-day/week scheduling with reorderable lift order
 - Print layout: A4 landscape, one week per page, a day per column

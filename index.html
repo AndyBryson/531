@@ -311,7 +311,7 @@
       <div id="weekPanels"></div>
 
       <footer class="foot">
-        <span>Plate loading is sequenced to minimise changes between sets, not just picked from the heaviest plate down.</span>
+        <span>Plates are listed in loading order, innermost first, and sequenced to minimise plate changes between sets.</span>
         <span>Independent build — not affiliated with Jim Wendler or any 5/3/1 app.</span>
       </footer>
     </main>
@@ -467,38 +467,17 @@
   }
 
   // ---------------- plate algorithm ----------------
-  // maxMap: {"<weight>.toFixed(4)": count available per side}. preUsed (optional):
-  // counts already committed elsewhere (e.g. still sitting on the bar), which count
-  // against the same physical inventory.
-  function greedyCombo(target, denomsDesc, maxMap, preUsed){
-    var remaining = target, combo = [];
-    var used = {};
-    if(preUsed) for(var pk in preUsed) used[pk] = preUsed[pk];
-    for(var i=0;i<denomsDesc.length;i++){
-      var d = denomsDesc[i];
-      var key = d.toFixed(4);
-      var max = maxMap && maxMap[key]!==undefined ? maxMap[key] : 0;
-      while(remaining + EPS >= d && (used[key]||0) < max){
-        combo.push(d); remaining -= d; used[key] = (used[key]||0)+1;
-      }
-    }
-    return {combo:combo, leftover:remaining};
-  }
-  function comboSum(c){ var s=0; for(var i=0;i<c.length;i++) s+=c[i]; return s; }
-  function countsOf(arr){
-    var m = {};
-    for(var i=0;i<arr.length;i++){ var k=arr[i].toFixed(4); m[k]=(m[k]||0)+1; }
-    return m;
-  }
-  function changeCost(a,b){
-    var ca=countsOf(a), cb=countsOf(b), keys={}, k;
-    for(k in ca) keys[k]=1; for(k in cb) keys[k]=1;
-    var cost=0;
-    for(k in keys) cost += Math.abs((ca[k]||0)-(cb[k]||0));
-    return cost;
-  }
-  // state.plates holds the number of each plate the user owns PER SIDE — directly
-  // the budget the loading algorithm works with.
+  // Plates on one side of the bar form a stack: you can only add or remove at the
+  // outside. So going from one set to the next costs (plates taken off) + (plates
+  // put on), where everything inside the common inner prefix stays put. For a
+  // session's sequence of per-side targets we pick one stack per set to minimise
+  // the total number of plate moves (dynamic programming over candidate stacks).
+  // Accuracy comes first: a set only considers stacks that hit its target exactly,
+  // or the closest achievable weight when nothing does. Ties on moves go to the
+  // stack with heavier plates further in.
+
+  // state.plates holds the number of each plate the user owns PER SIDE, which is
+  // directly the budget per stack.
   function plateMaxMap(plates){
     var m = {};
     Object.keys(plates).forEach(function(k){
@@ -507,48 +486,109 @@
     });
     return m;
   }
-  // Sequence a list of per-side target weights, minimising total plate changes
-  // between consecutive sets rather than recomputing a fresh greedy combo each time,
-  // and respecting a limited inventory of each denomination (you can't load a third
-  // 20kg plate per side if you only own two). When a target can't be hit exactly —
-  // wrong denominations available, or not enough plates on hand — falls back to the
-  // closest weight achievable rather than giving up.
+  function comboSum(c){ var s=0; for(var i=0;i<c.length;i++) s+=c[i]; return s; }
+
+  // every multiset of owned plates whose sum is the closest achievable to target
+  // (exact when possible; under preferred to over on a tie), limited to the fewest
+  // plates needed plus one so the candidate list stays small
+  var MAX_COMBOS_PER_SET = 8;
+  function closestCombos(target, desc, maxMap){
+    var all = [];
+    var ceiling = target + (desc.length ? desc[0] : 0) + EPS;
+    (function walk(i, sum, combo){
+      if(i===desc.length){ if(combo.length) all.push({combo:combo.slice(), sum:sum}); return; }
+      var d = desc[i], max = maxMap[d.toFixed(4)]||0;
+      for(var n=0; n<=max && sum + n*d <= ceiling; n++){
+        for(var k=0;k<n;k++) combo.push(d);
+        walk(i+1, sum + n*d, combo);
+        for(var k2=0;k2<n;k2++) combo.pop();
+      }
+    })(0, 0, []);
+    if(!all.length) return [];
+    function err(c){ return Math.abs(c.sum - target); }
+    var best = Math.min.apply(null, all.map(err));
+    var close = all.filter(function(c){ return err(c) <= best + EPS; });
+    // on an equal miss, prefer landing under the prescribed weight
+    if(close.some(function(c){ return c.sum <= target + EPS; })) close = close.filter(function(c){ return c.sum <= target + EPS; });
+    var fewest = Math.min.apply(null, close.map(function(c){ return c.combo.length; }));
+    close = close.filter(function(c){ return c.combo.length <= fewest + 1; });
+    close.sort(function(a,b){ return a.combo.length - b.combo.length; });
+    return close.slice(0, MAX_COMBOS_PER_SET);
+  }
+  // loading order for a combo that keeps as much of the previous stack as possible:
+  // the longest inner prefix of `prev` that the combo contains, then the remaining
+  // plates heaviest first
+  function orderAfter(prev, combo){
+    var left = combo.slice(), stack = [];
+    for(var i=0;i<prev.length;i++){
+      var idx = -1;
+      for(var j=0;j<left.length;j++) if(Math.abs(left[j]-prev[i])<EPS){ idx=j; break; }
+      if(idx<0) break;
+      stack.push(left.splice(idx,1)[0]);
+    }
+    return stack.concat(left.sort(function(x,y){ return y-x; }));
+  }
+  var MAX_STACKS_PER_SET = 40;
+  function stackMoves(a, b){
+    var p = 0;
+    while(p<a.length && p<b.length && Math.abs(a[p]-b[p])<EPS) p++;
+    return (a.length-p) + (b.length-p);
+  }
+  // secondary tie-break: pairs where a lighter plate sits inside a heavier one
+  function inversions(s){
+    var n=0;
+    for(var i=0;i<s.length;i++) for(var j=i+1;j<s.length;j++) if(s[i] < s[j]-EPS) n++;
+    return n;
+  }
+
+  // Returns, per target, {combo: plates in loading order (innermost first), exact}.
   function computeSessionPlates(targets, plates){
     var maxMap = plateMaxMap(plates);
     var desc = Object.keys(maxMap).map(function(k){ return parseFloat(k); }).sort(function(a,b){return b-a;});
-    var previous = [];
-    var out = [];
+    if(!targets.length) return [];
+    // beam DP: a set's candidate stacks are its closest-weight combos, each ordered
+    // to keep as much as possible of one of the previous set's surviving stacks
+    // (plus plain heaviest-first). Cost = [moves, inversions], compared in order.
+    var better = function(a,b){ return a[0]<b[0] || (a[0]===b[0] && a[1]<b[1]); };
+    var layers = [];
+    var prev = [{stack:[], cost:[0,0], back:-1}];
     for(var i=0;i<targets.length;i++){
-      var target = targets[i];
-      var prevSum = comboSum(previous);
-      var diff = target - prevSum;
-      var candidateA;
-      if(diff >= -EPS){
-        var add = greedyCombo(diff, desc, maxMap, countsOf(previous));
-        candidateA = previous.concat(add.combo);
-      } else {
-        var trial = previous.slice().sort(function(a,b){return a-b;});
-        while(trial.length && comboSum(trial) > target+EPS) trial.shift();
-        var remainder = target - comboSum(trial);
-        candidateA = remainder > EPS ? trial.concat(greedyCombo(remainder, desc, maxMap, countsOf(trial)).combo) : trial;
-      }
-      var candidateB = greedyCombo(target, desc, maxMap, {}).combo;
-      // Accuracy comes first: a combo that actually hits the target beats one that
-      // merely reuses more of the previous plates but lands short. Only when both
-      // candidates are equally (in)accurate does plate-change count break the tie —
-      // otherwise "fewest changes" could silently pick a combo that's a whole plate
-      // off the requested weight just because it happened to need no changes.
-      var errA = Math.abs(comboSum(candidateA) - target);
-      var errB = Math.abs(comboSum(candidateB) - target);
-      var chosen;
-      if(Math.abs(errA - errB) > EPS){
-        chosen = errA < errB ? candidateA : candidateB;
-      } else {
-        chosen = changeCost(previous,candidateA) <= changeCost(previous,candidateB) ? candidateA : candidateB;
-      }
-      var achieved = comboSum(chosen);
-      out.push({combo:chosen.slice().sort(function(a,b){return b-a;}), exact: Math.abs(achieved-target) <= EPS});
-      previous = chosen;
+      var t = targets[i];
+      var combos = closestCombos(t, desc, maxMap);
+      var seen = {}, layer = [];
+      var consider = function(stack, exact){
+        var key = stack.join(",");
+        var inv = inversions(stack);
+        var bestCost = null, bestK = -1;
+        prev.forEach(function(p, k){
+          var cst = [p.cost[0] + stackMoves(p.stack, stack), p.cost[1] + inv];
+          if(bestCost===null || better(cst, bestCost)){ bestCost = cst; bestK = k; }
+        });
+        if(seen[key]!==undefined){
+          var ex = layer[seen[key]];
+          if(better(bestCost, ex.cost)){ ex.cost = bestCost; ex.back = bestK; }
+          return;
+        }
+        seen[key] = layer.length;
+        layer.push({stack:stack, exact:exact, cost:bestCost, back:bestK});
+      };
+      combos.forEach(function(c){
+        var exact = Math.abs(c.sum - t) <= EPS;
+        consider(orderAfter([], c.combo), exact);
+        prev.forEach(function(p){ consider(orderAfter(p.stack, c.combo), exact); });
+      });
+      if(!layer.length) layer.push({stack:[], exact:false, cost:prev[0].cost, back:0});
+      var kept = layer.slice().sort(function(a,b){ return better(a.cost,b.cost) ? -1 : better(b.cost,a.cost) ? 1 : 0; }).slice(0, MAX_STACKS_PER_SET);
+      layers.push(kept);
+      prev = kept;
+    }
+    var last = 0;
+    for(var j=1;j<prev.length;j++) if(better(prev[j].cost, prev[last].cost)) last = j;
+    var out = new Array(targets.length);
+    for(var s=targets.length-1; s>=0; s--){
+      var pick = layers[s][last];
+      out[s] = {combo:pick.stack.slice(), exact:pick.exact};
+      last = pick.back;
     }
     return out;
   }
@@ -746,8 +786,8 @@
     if(s.belowBar) return '<span class="badge note">bar only</span>';
     if(!s.plateCombo || s.plateCombo.length===0) return '<span class="badge note">no plates selected</span>';
     var approx = s.plateApprox;
-    // combo already arrives sorted heaviest-first (see computeSessionPlates), so the
-    // badges read heaviest to lightest, same order a lifter would load the bar in
+    // combo arrives in loading order, innermost plate first (see computeSessionPlates),
+    // so plates that stay on between sets read first and changes happen at the end
     return s.plateCombo.map(function(w){
       var title = fmtWeight(w)+' '+unitLabel()+(approx?' (closest available)':'');
       return '<span class="badge'+(approx?' approx':'')+'" title="'+title+'">'+fmtWeight(w)+'</span>';

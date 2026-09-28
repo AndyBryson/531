@@ -354,16 +354,37 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   const anyBarOnlyNote = ohpCardLow && /bar only/.test(ohpCardLow.textContent);
   log('a below-bar target is still flagged "bar only" in the plates column', !!anyBarOnlyNote);
 
-  // --- plate badges: heaviest plate listed first (the one most likely to stay on the
-  // bar between sets), and no "per side" suffix anywhere ---
-  const badgeRowsForOrder = Array.from(doc.querySelectorAll('.day-card .set-row'))
-    .filter(row => row.querySelectorAll('.badge:not(.note)').length > 0);
-  log('found plate breakdown badges to check ordering on', badgeRowsForOrder.length > 0);
-  const allDescending = badgeRowsForOrder.every(row => {
-    const weights = Array.from(row.querySelectorAll('.badge:not(.note)')).map(b => parseFloat(b.textContent));
-    return weights.every((w, i) => i === 0 || w <= weights[i - 1] + 1e-9);
+  // --- plate badges are in loading order (innermost first) and the session is
+  // sequenced as a stack: only outer plates change between sets. Uses the reported
+  // case: OHP TM 55 with one of each plate per side (two 20s), week 1. ---
+  const userPlates = { '25': 1, '20': 2, '15': 1, '10': 1, '5': 1, '2.5': 1, '1.25': 1, '0.5': 0 };
+  Object.keys(userPlates).forEach(w => {
+    const inp = doc.querySelector(`[data-plate-qty="${w}"]`);
+    inp.value = String(userPlates[w]);
+    inp.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   });
-  log('plate breakdowns list the heaviest plate first', allDescending);
+  const ohp55 = doc.querySelector('[data-lift="ohp"][data-field="value"]');
+  ohp55.value = '55';
+  ohp55.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await wait(20);
+  const ohpCard55 = Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Overhead Press');
+  const stacks = Array.from(ohpCard55.querySelectorAll('.set-list')[0].querySelectorAll('.set-row'))
+    .map(row => Array.from(row.querySelectorAll('.badge:not(.note)')).map(b => parseFloat(b.textContent)));
+  log('OHP 5+ set at 47.5 loads as 10, 1.25, 2.5 (adds 2.5 outside the previous 10, 1.25)', JSON.stringify(stacks[5]) === '[10,1.25,2.5]');
+  log('OHP 75% set at 42.5 loads as 10, 1.25', JSON.stringify(stacks[4]) === '[10,1.25]');
+  const moves = (a, b) => { let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++; return (a.length - p) + (b.length - p); };
+  const totalMoves = stacks.slice(1).reduce((n, st, i) => n + moves(stacks[i], st), stacks[0].length);
+  const sorted = stacks.map(st => st.slice().sort((a, b) => b - a));
+  const sortedMoves = sorted.slice(1).reduce((n, st, i) => n + moves(sorted[i], st), sorted[0].length);
+  log('OHP week 1 needs no more plate moves than heaviest-first loading (' + totalMoves + ' vs ' + sortedMoves + ')', totalMoves <= sortedMoves);
+  const everyRowSums = Array.from(doc.querySelectorAll('.day-card .set-row')).every(row => {
+    const badges = Array.from(row.querySelectorAll('.badge:not(.note)'));
+    if (!badges.length || badges.some(b => b.classList.contains('approx'))) return true;
+    const w = rowWeight(row);
+    const sum = badges.reduce((t, b) => t + parseFloat(b.textContent), 0);
+    return Math.abs(20 + 2 * sum - w) < 1e-6;
+  });
+  log('every exact plate breakdown adds up to the set weight', everyRowSums);
   const noPerSideSuffix = !Array.from(doc.querySelectorAll('.day-card .badge')).some(b => /per side/.test(b.textContent));
   log('plate breakdown text no longer says "per side"', noPerSideSuffix);
 
