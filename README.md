@@ -29,7 +29,7 @@ Fixed 3-day split, independent of the days/week and lift-order settings:
 
 ### Standard + partner FSL
 
-Uses the normal days/week and lift-order settings. Each day is its main lift's full wave, then 5×5 of its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set percentage for that week (65/70/75% of the partner's TM). Skipped on the deload week.
+Uses the normal days/week and lift-order settings. Each day is its main lift's full wave, then sets of 5 on its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set percentage for that week (65/70/75% of the partner's TM). The number of FSL sets is set per lift (default 5). Skipped on the deload week.
 
 ## Development
 

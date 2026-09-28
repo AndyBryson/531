@@ -255,6 +255,7 @@
           <select id="templateSelect"></select>
         </div>
         <p class="hint" id="templateBlurb"></p>
+        <div id="partnerFslSets" style="display:none; margin-top:10px;"></div>
         <div class="ctrl-row" style="margin-top:10px;"><label>Weeks to show</label></div>
         <div class="weekchips" id="weekChips"></div>
       </section>
@@ -334,7 +335,7 @@
     pyramid:{name:"Pyramid", blurb:"Work sets ascend, then two back-off sets descend for max reps."},
     fivespro:{name:"5's PRO", blurb:"Same three weekly percentages, but every set is a fixed 5 reps — no AMRAP."},
     gvt:{name:"German Volume Training", blurb:"Main lift, then 10×10 @ 60% TM."},
-    partnerfsl:{name:"Standard + partner FSL", blurb:"Main lift, then 5×5 of its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set weight for that week. Skipped on the deload week."},
+    partnerfsl:{name:"Standard + partner FSL", blurb:"Main lift, then sets of 5 on its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set weight for that week. Set the number of FSL sets per lift below. Skipped on the deload week."},
     triumvirate:{name:"Triumvirate", blurb:"Main lift plus two assistance slots for you to fill in below."},
     beginners:{name:"5/3/1 for Beginners", blurb:"Fixed 3-day split, ignores the days/week and lift-order settings below. Day 1: Squat (full) + Bench practice sets. Day 2: Deadlift and Overhead Press, both full. Day 3: Bench (full) + Squat practice sets."}
   };
@@ -397,6 +398,8 @@
       plates:Object.assign({}, DEFAULT_PLATES_KG),
       showPlates:true,
       programTitle:"",
+      // Standard + partner FSL: sets of 5 for each lift when it's done as FSL on its partner's day
+      partnerFslSets:{ohp:5, bench:5, squat:5, deadlift:5},
       accessories:{
         ohp:[{id:"ex1", name:"Dip", sets:3, reps:"10-15", weighted:false, weight:0}],
         bench:[{id:"ex2", name:"Bicep Curl", sets:3, reps:"10-15", weighted:false, weight:0}],
@@ -419,7 +422,8 @@
         lifts:Object.assign(d.lifts, parsed.lifts||{}),
         weeks:Object.assign(d.weeks, parsed.weeks||{}),
         accessories:Object.assign(d.accessories, parsed.accessories||{}),
-        plates:Object.assign({}, d.plates, parsed.plates||{})
+        plates:Object.assign({}, d.plates, parsed.plates||{}),
+        partnerFslSets:Object.assign({}, d.partnerFslSets, parsed.partnerFslSets||{})
       });
     }catch(e){ return defaultState(); }
   }
@@ -614,7 +618,7 @@
   }
 
   var PARTNER_LIFT = {ohp:"bench", bench:"ohp", squat:"deadlift", deadlift:"squat"};
-  var PARTNER_FSL_SETS = 5, PARTNER_FSL_REPS = 5;
+  var PARTNER_FSL_REPS = 5;
 
   function includedWeeks(){
     return [1,2,3,4].filter(function(w){ return state.weeks[w]; });
@@ -666,7 +670,7 @@
       } else if(descriptor.lightMode==="fsl"){
         if(!isDeload){
           var fslPct = WEEK_SCHEMES[weekNum][0].pct;
-          lightBlock = [{label:"FSL", reps:PARTNER_FSL_REPS, sets:PARTNER_FSL_SETS, weight:roundTo(tms[descriptor.light]*fslPct, roundIncrement), pct:fslPct, warmup:false, amrap:false, isAssistance:true}];
+          lightBlock = [{label:"FSL", reps:PARTNER_FSL_REPS, sets:state.partnerFslSets[descriptor.light]||5, weight:roundTo(tms[descriptor.light]*fslPct, roundIncrement), pct:fslPct, warmup:false, amrap:false, isAssistance:true}];
         }
       } else if(!isDeload){
         var lightTm = tms[descriptor.light];
@@ -873,6 +877,13 @@
     templateSelect.value = state.template;
     document.getElementById("templateBlurb").textContent = TEMPLATES[state.template].blurb;
 
+    var fslSetsEl = document.getElementById("partnerFslSets");
+    fslSetsEl.style.display = state.template==="partnerfsl" ? "" : "none";
+    fslSetsEl.innerHTML = LIFTS.map(function(lift){
+      return '<div class="field"><label>'+LIFT_META[lift].name+' FSL sets</label>'
+        + '<input type="number" data-fsl-sets="'+lift+'" value="'+state.partnerFslSets[lift]+'" min="1" max="10" step="1"></div>';
+    }).join("");
+
     var weekChips = document.getElementById("weekChips");
     weekChips.innerHTML = [1,2,3,4].map(function(w){
       return '<label class="chip"><input type="checkbox" data-week="'+w+'" '+(state.weeks[w]?"checked":"")+'>'+WEEK_LABEL[w]+'</label>';
@@ -1012,6 +1023,11 @@
       // inputs did before that was fixed.
       var pw = t.dataset.plateQty;
       state.plates[pw] = Math.max(0, parseInt(t.value,10)||0);
+      renderOutputOnly(); saveState(); return;
+    }
+    if(t.matches("[data-fsl-sets]")){
+      // output only, so the input keeps focus while typing (same as the plate inputs)
+      state.partnerFslSets[t.dataset.fslSets] = Math.min(10, Math.max(1, parseInt(t.value,10)||1));
       renderOutputOnly(); saveState(); return;
     }
     if(t.id==="showPlatesCheck"){ state.showPlates = t.checked; render(); return; }

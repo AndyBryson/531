@@ -257,6 +257,20 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
           rows.length === 5 && rows.every(r => rowWeight(r) === expected && /^5 ×/.test(r.querySelector('.set-load').textContent.trim())));
       });
     });
+    log('FSL set inputs shown for partner FSL', doc.getElementById('partnerFslSets').style.display !== 'none' && doc.querySelectorAll('[data-fsl-sets]').length === 4);
+    const squatSets = doc.querySelector('[data-fsl-sets="squat"]');
+    squatSets.value = '3';
+    squatSets.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await wait(20);
+    const dlCard = Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Deadlift');
+    const sqFslRows = dlCard ? dlCard.querySelectorAll('.set-list')[1].querySelectorAll('.set-row').length : 0;
+    log('squat FSL sets set to 3 gives 3 squat FSL rows on the deadlift day', sqFslRows === 3);
+    const ohpCardSets = Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Overhead Press');
+    log('other lifts keep 5 FSL sets', !!ohpCardSets && ohpCardSets.querySelectorAll('.set-list')[1].querySelectorAll('.set-row').length === 5);
+    log('squat FSL input keeps focus-safe element after typing', squatSets.isConnected);
+    squatSets.value = '5';
+    squatSets.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await wait(20);
     const w4 = Array.from(doc.querySelectorAll('[data-week-panel="4"] .day-card'));
     log('partner FSL skipped on the deload week', w4.length > 0 && w4.every(c => /FSL skipped on the deload week/.test(c.textContent)));
   }
