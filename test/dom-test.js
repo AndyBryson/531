@@ -233,6 +233,34 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   log('Days per week select is disabled while Beginners is active', daysSelect.disabled === true);
   log('a hint explains the fixed schedule while Beginners is active', doc.getElementById('beginnersScheduleHint').style.display !== 'none');
 
+  // --- Standard + partner FSL: normal schedule, each day adds 5x5 of its partner
+  // lift (OHP<->Bench, Squat<->Deadlift) at the partner's first work-set % that week ---
+  templateSelect.value = 'partnerfsl';
+  templateSelect.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await wait(20);
+  log('no errors after selecting Standard + partner FSL', errors.length === 0);
+  log('days per week select is enabled for partner FSL', daysSelect.disabled === false);
+  {
+    const tmText = doc.getElementById('programSub').textContent;
+    const tmOf = name => parseFloat((tmText.match(new RegExp(name + ' ([\\d.]+)')) || [])[1]);
+    const pairs = { 'Overhead Press': ['Bench Press', 'Bench'], 'Bench Press': ['Overhead Press', 'OHP'], 'Squat': ['Deadlift', 'Deadlift'], 'Deadlift': ['Squat', 'Squat'] };
+    [[1, .65], [2, .70], [3, .75]].forEach(([w, pct]) => {
+      const cards = Array.from(doc.querySelectorAll('[data-week-panel="' + w + '"] .day-card'));
+      Object.keys(pairs).forEach(main => {
+        const card = cards.find(c => cardTitle(c) === main);
+        const [partnerName, tmKey] = pairs[main];
+        const list = card && card.querySelectorAll('.set-list')[1];
+        const rows = list ? Array.from(list.querySelectorAll('.set-row')) : [];
+        const expected = Math.round(tmOf(tmKey) * pct / 2.5) * 2.5;
+        log('week ' + w + ' ' + main + ' day: ' + partnerName + ' FSL is 5 rows of 5 @ ' + expected,
+          !!card && new RegExp(partnerName + ' — FSL').test(card.textContent) &&
+          rows.length === 5 && rows.every(r => rowWeight(r) === expected && /^5 ×/.test(r.querySelector('.set-load').textContent.trim())));
+      });
+    });
+    const w4 = Array.from(doc.querySelectorAll('[data-week-panel="4"] .day-card'));
+    log('partner FSL skipped on the deload week', w4.length > 0 && w4.every(c => /FSL skipped on the deload week/.test(c.textContent)));
+  }
+
   // --- plate-quantity limiting: with only ONE 20kg plate per side, a target that
   // greedily wants two 20s should fall back to an achievable combo instead of
   // silently pretending it has plates it doesn't ---

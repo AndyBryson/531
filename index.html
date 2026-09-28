@@ -334,6 +334,7 @@
     pyramid:{name:"Pyramid", blurb:"Work sets ascend, then two back-off sets descend for max reps."},
     fivespro:{name:"5's PRO", blurb:"Same three weekly percentages, but every set is a fixed 5 reps — no AMRAP."},
     gvt:{name:"German Volume Training", blurb:"Main lift, then 10×10 @ 60% TM."},
+    partnerfsl:{name:"Standard + partner FSL", blurb:"Main lift, then 5×5 of its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set weight for that week. Skipped on the deload week."},
     triumvirate:{name:"Triumvirate", blurb:"Main lift plus two assistance slots for you to fill in below."},
     beginners:{name:"5/3/1 for Beginners", blurb:"Fixed 3-day split, ignores the days/week and lift-order settings below. Day 1: Squat (full) + Bench practice sets. Day 2: Deadlift and Overhead Press, both full. Day 3: Bench (full) + Squat practice sets."}
   };
@@ -595,15 +596,25 @@
         {main:"bench", light:"squat", lightMode:"practice", dayLabel:3}
       ];
     }
+    var days;
     if(state.daysPerWeek===4){
-      return state.liftOrder.map(function(lift, i){ return {main:lift, light:null, dayLabel:i+1}; });
+      days = state.liftOrder.map(function(lift, i){ return {main:lift, light:null, dayLabel:i+1}; });
+    } else {
+      var order = state.liftOrder;
+      var offset = ((weekNum-1)*3) % order.length;
+      days = [];
+      for(var i=0;i<3;i++) days.push({main:order[(offset+i)%order.length], light:null, dayLabel:i+1});
     }
-    var order = state.liftOrder;
-    var offset = ((weekNum-1)*3) % order.length;
-    var days = [];
-    for(var i=0;i<3;i++) days.push({main:order[(offset+i)%order.length], light:null, dayLabel:i+1});
+    if(state.template==="partnerfsl"){
+      // each day also gets FSL volume on its partner lift, so every lift is
+      // trained twice a week: once heavy on its own day, once as FSL
+      days.forEach(function(d){ d.light = PARTNER_LIFT[d.main]; d.lightMode = "fsl"; });
+    }
     return days;
   }
+
+  var PARTNER_LIFT = {ohp:"bench", bench:"ohp", squat:"deadlift", deadlift:"squat"};
+  var PARTNER_FSL_SETS = 5, PARTNER_FSL_REPS = 5;
 
   function includedWeeks(){
     return [1,2,3,4].filter(function(w){ return state.weeks[w]; });
@@ -652,6 +663,11 @@
       if(descriptor.lightMode==="full"){
         var lightWave = buildWave(tms[descriptor.light], weekNum);
         lightBlock = lightWave.warmups.concat(lightWave.workSets);
+      } else if(descriptor.lightMode==="fsl"){
+        if(!isDeload){
+          var fslPct = WEEK_SCHEMES[weekNum][0].pct;
+          lightBlock = [{label:"FSL", reps:PARTNER_FSL_REPS, sets:PARTNER_FSL_SETS, weight:roundTo(tms[descriptor.light]*fslPct, roundIncrement), pct:fslPct, warmup:false, amrap:false, isAssistance:true}];
+        }
       } else if(!isDeload){
         var lightTm = tms[descriptor.light];
         lightBlock = LIGHT_PCTS.map(function(pct){
@@ -789,14 +805,14 @@
       var lightRows = expandSets(day.lightBlock).map(setRowHTML).join("");
       // "full" (e.g. Overhead Press alongside Deadlift): a second lift trained at
       // full intensity, once a week — same section styling, just no "practice" label
-      var sectionTitle = day.lightMode==="full" ? lightMeta.name : lightMeta.name+' — practice sets';
+      var sectionTitle = day.lightMode==="full" ? lightMeta.name : lightMeta.name+(day.lightMode==="fsl" ? ' — FSL' : ' — practice sets');
       lightSection = '<div><div class="section-label">'+sectionTitle+'</div><div class="set-list">'+lightRows+'</div></div>';
     } else if(day.lightLift){
       // deload week: a "practice" light partner's fixed sets are skipped entirely, same as
       // other templates' assistance work (a "full" light partner never hits this branch —
       // it keeps waving through deload just like any main lift)
       var lightMetaOff = LIFT_META[day.lightLift];
-      lightSection = '<p class="empty-note">'+lightMetaOff.name+' practice sets skipped on the deload week.</p>';
+      lightSection = '<p class="empty-note">'+lightMetaOff.name+(day.lightMode==="fsl" ? ' FSL' : ' practice sets')+' skipped on the deload week.</p>';
     }
     var accessorySections = day.accessories.map(accessoryBlockHTML).join("");
     return '<div class="day-card">'
@@ -1097,7 +1113,7 @@
         });
         if(day.lightLift){
           if(day.lightBlock.length){
-            var lightHeading = day.lightMode==="full" ? LIFT_META[day.lightLift].name + ":" : LIFT_META[day.lightLift].name + " practice sets (fixed):";
+            var lightHeading = day.lightMode==="full" ? LIFT_META[day.lightLift].name + ":" : day.lightMode==="fsl" ? LIFT_META[day.lightLift].name + " FSL:" : LIFT_META[day.lightLift].name + " practice sets (fixed):";
             lines.push("  " + lightHeading);
             day.lightBlock.forEach(function(s){
               var sets = s.sets||1;
@@ -1105,7 +1121,7 @@
               lines.push("    " + (sets>1?sets+"x":"") + reps + " @ " + fmtWeight(s.weight) + unitLabel() + (s.pct?" ("+Math.round(s.pct*100)+"%)":""));
             });
           } else {
-            lines.push("  " + LIFT_META[day.lightLift].name + " practice sets skipped (deload)");
+            lines.push("  " + LIFT_META[day.lightLift].name + (day.lightMode==="fsl" ? " FSL" : " practice sets") + " skipped (deload)");
           }
         }
         lines.push("");

@@ -13,7 +13,7 @@ Open `index.html` in a browser, or use the link above. State is encoded in the U
 ## Features
 
 - Training max from 1RM, direct TM entry, or a rep-set (Epley) input
-- Templates: Standard, Boring But Big, First Set Last, Pyramid, 5's PRO, GVT, Triumvirate, 5/3/1 for Beginners
+- Templates: Standard, Boring But Big, First Set Last, Pyramid, 5's PRO, GVT, Triumvirate, 5/3/1 for Beginners, Standard + partner FSL
 - Plate-loading calculator: sequences a session's sets to minimise plate changes between sets (not just heaviest-first), respects a limited per-side plate inventory, flags inexact loads as "closest available"
 - Custom accessory exercises per lift, with optional weight and plate loading
 - 4-day or 3-day/week scheduling with reorderable lift order
@@ -26,6 +26,10 @@ Fixed 3-day split, independent of the days/week and lift-order settings:
 - Day 1: Squat (full 5/3/1 wave) + Bench Press practice sets (fixed 3×5 @ 55/65/75% of Bench's own TM)
 - Day 2: Deadlift and Overhead Press, both full waves
 - Day 3: Bench Press (full wave) + Squat practice sets
+
+### Standard + partner FSL
+
+Uses the normal days/week and lift-order settings. Each day is its main lift's full wave, then 5×5 of its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set percentage for that week (65/70/75% of the partner's TM). Skipped on the deload week.
 
 ## Development
 
