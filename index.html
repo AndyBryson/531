@@ -548,10 +548,16 @@
     if(!targets.length) return [];
     // beam DP: a set's candidate stacks are its closest-weight combos, each ordered
     // to keep as much as possible of one of the previous set's surviving stacks
-    // (plus plain heaviest-first). Cost = [moves, inversions], compared in order.
-    var better = function(a,b){ return a[0]<b[0] || (a[0]===b[0] && a[1]<b[1]); };
+    // (plus plain heaviest-first). Plans are compared on total plate moves, then on
+    // moves set by set from the start (fewer changes earlier wins, so ramp-up sets
+    // just add plates and any big swap comes later), then on inversions.
+    var better = function(a,b){
+      if(a.moves!==b.moves) return a.moves < b.moves;
+      for(var q=0;q<a.seq.length && q<b.seq.length;q++) if(a.seq[q]!==b.seq[q]) return a.seq[q] < b.seq[q];
+      return a.inv < b.inv;
+    };
     var layers = [];
-    var prev = [{stack:[], cost:[0,0], back:-1}];
+    var prev = [{stack:[], cost:{moves:0, seq:[], inv:0}, back:-1}];
     for(var i=0;i<targets.length;i++){
       var t = targets[i];
       var combos = closestCombos(t, desc, maxMap);
@@ -561,7 +567,8 @@
         var inv = inversions(stack);
         var bestCost = null, bestK = -1;
         prev.forEach(function(p, k){
-          var cst = [p.cost[0] + stackMoves(p.stack, stack), p.cost[1] + inv];
+          var mv = stackMoves(p.stack, stack);
+          var cst = {moves:p.cost.moves + mv, seq:p.cost.seq.concat([mv]), inv:p.cost.inv + inv};
           if(bestCost===null || better(cst, bestCost)){ bestCost = cst; bestK = k; }
         });
         if(seen[key]!==undefined){
