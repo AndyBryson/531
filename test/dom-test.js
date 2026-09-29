@@ -268,6 +268,13 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
     const ohpCardSets = Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Overhead Press');
     log('other lifts keep 5 FSL sets', !!ohpCardSets && ohpCardSets.querySelectorAll('.set-list')[1].querySelectorAll('.set-row').length === 5);
     log('squat FSL input keeps focus-safe element after typing', squatSets.isConnected);
+    squatSets.value = '0';
+    squatSets.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await wait(20);
+    const dlCardOff = Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Deadlift');
+    log('squat FSL sets set to 0 removes squat FSL from the deadlift day', !!dlCardOff && !/Squat — FSL/.test(dlCardOff.textContent) && !/FSL skipped/.test(dlCardOff.textContent));
+    const dlCardOffDeload = Array.from(doc.querySelectorAll('[data-week-panel="4"] .day-card')).find(c => cardTitle(c) === 'Deadlift');
+    log('no "FSL skipped" note on the deload week for a lift turned off', !!dlCardOffDeload && !/FSL skipped/.test(dlCardOffDeload.textContent));
     squatSets.value = '5';
     squatSets.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     await wait(20);
