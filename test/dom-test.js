@@ -406,6 +406,10 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   log('no errors after exercising the print button', errors.length === 0);
 
   // --- print output structure ---
+  const printSheet = doc.getElementById('printStyles');
+  log('print layout lives in its own media="print" stylesheet', !!printSheet && printSheet.media === 'print');
+  dom.window.dispatchEvent(new dom.window.Event('beforeprint'));
+  log('fit-to-page on beforeprint runs without errors and restores the print stylesheet', errors.length === 0 && printSheet.media === 'print' && doc.documentElement.style.width === '');
   const weekHeadings = doc.querySelectorAll('.week-print-heading');
   log('print-only week headings exist (one per week panel)', weekHeadings.length === doc.querySelectorAll('.week-panel').length && weekHeadings.length > 0);
   const dayCardsWrapper = doc.querySelectorAll('.week-panel .day-cards');
