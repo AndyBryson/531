@@ -282,6 +282,35 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
     log('partner FSL skipped on the deload week', w4.length > 0 && w4.every(c => /FSL skipped on the deload week/.test(c.textContent)));
   }
 
+  // --- own-lift FSL: optional sets of 5 of the day's own lift after its main sets ---
+  {
+    log('own FSL inputs shown for partner FSL', doc.getElementById('ownFslSets').style.display !== 'none' && doc.querySelectorAll('[data-own-fsl-sets]').length === 4);
+    const tmText = doc.getElementById('programSub').textContent;
+    const benchTm = parseFloat((tmText.match(/Bench ([\d.]+)/) || [])[1]);
+    const benchCard = w => Array.from(doc.querySelectorAll('[data-week-panel="' + w + '"] .day-card')).find(c => cardTitle(c) === 'Bench Press');
+    log('own FSL is off by default', !/FSL/.test(benchCard(1).querySelectorAll('.set-list')[0].textContent));
+    const ownBench = doc.querySelector('[data-own-fsl-sets="bench"]');
+    ownBench.value = '5';
+    ownBench.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await wait(20);
+    [[1, .65], [2, .70], [3, .75]].forEach(([w, pct]) => {
+      const card = benchCard(w);
+      const mainRows = Array.from(card.querySelectorAll('.set-list')[0].querySelectorAll('.set-row'));
+      const fslRows = mainRows.filter(r => /FSL/.test(r.textContent));
+      const expected = Math.round(benchTm * pct / 2.5) * 2.5;
+      log('week ' + w + ' bench day: own FSL is 5 rows of 5 @ ' + expected + ' in the main list',
+        fslRows.length === 5 && fslRows.every(r => rowWeight(r) === expected && /^5 ×/.test(r.querySelector('.set-load').textContent.trim())) &&
+        mainRows.indexOf(fslRows[0]) === mainRows.length - 5);
+      log('week ' + w + ' bench day: OHP partner FSL block unchanged', /Overhead Press — FSL/.test(card.textContent) && card.querySelectorAll('.set-list')[1].querySelectorAll('.set-row').length === 5);
+    });
+    log('own FSL absent on the deload week', !/FSL/.test(benchCard(4).querySelectorAll('.set-list')[0].textContent));
+    log('own FSL on bench does not appear on other lifts', !/FSL/.test(Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Squat').querySelectorAll('.set-list')[0].textContent));
+    ownBench.value = '0';
+    ownBench.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await wait(20);
+    log('own FSL set back to 0 removes it', !/FSL/.test(benchCard(1).querySelectorAll('.set-list')[0].textContent));
+  }
+
   // --- plate-quantity limiting: with only ONE 20kg plate per side, a target that
   // greedily wants two 20s should fall back to an achievable combo instead of
   // silently pretending it has plates it doesn't ---

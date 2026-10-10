@@ -276,6 +276,7 @@
         </div>
         <p class="hint" id="templateBlurb"></p>
         <div id="partnerFslSets" style="display:none; margin-top:10px;"></div>
+        <div id="ownFslSets" style="display:none; margin-top:10px;"></div>
         <div class="ctrl-row" style="margin-top:10px;"><label>Weeks to show</label></div>
         <div class="weekchips" id="weekChips"></div>
       </section>
@@ -420,6 +421,8 @@
       programTitle:"",
       // Standard + partner FSL: sets of 5 for each lift when it's done as FSL on its partner's day
       partnerFslSets:{ohp:5, bench:5, squat:5, deadlift:5},
+      // Standard + partner FSL: optional sets of 5 of the day's own lift, straight after its main sets (0 = off)
+      ownFslSets:{ohp:0, bench:0, squat:0, deadlift:0},
       accessories:{
         ohp:[{id:"ex1", name:"Dip", sets:3, reps:"10-15", weighted:false, weight:0}],
         bench:[{id:"ex2", name:"Bicep Curl", sets:3, reps:"10-15", weighted:false, weight:0}],
@@ -443,7 +446,8 @@
         weeks:Object.assign(d.weeks, parsed.weeks||{}),
         accessories:Object.assign(d.accessories, parsed.accessories||{}),
         plates:Object.assign({}, d.plates, parsed.plates||{}),
-        partnerFslSets:Object.assign({}, d.partnerFslSets, parsed.partnerFslSets||{})
+        partnerFslSets:Object.assign({}, d.partnerFslSets, parsed.partnerFslSets||{}),
+        ownFslSets:Object.assign({}, d.ownFslSets, parsed.ownFslSets||{})
       });
     }catch(e){ return defaultState(); }
   }
@@ -734,6 +738,13 @@
     var assistance = assistanceForTemplate(state.template, weekNum, tm, roundIncrement).map(function(a){
       return {label:a.label, reps:a.reps, weight:a.weight, pct:a.pct, sets:a.sets, warmup:false, amrap:false, isAssistance:true};
     });
+    if(state.template==="partnerfsl" && !isDeload){
+      var ownSets = state.ownFslSets[lift]||0;
+      if(ownSets>0){
+        var ownPct = WEEK_SCHEMES[weekNum][0].pct;
+        assistance.push({label:"FSL", reps:String(PARTNER_FSL_REPS), weight:roundTo(tm*ownPct, roundIncrement), pct:ownPct, sets:ownSets, warmup:false, amrap:false, isAssistance:true});
+      }
+    }
     var lightBlock = [];
     if(descriptor.light){
       if(descriptor.lightMode==="full"){
@@ -952,8 +963,15 @@
     var fslSetsEl = document.getElementById("partnerFslSets");
     fslSetsEl.style.display = state.template==="partnerfsl" ? "" : "none";
     fslSetsEl.innerHTML = LIFTS.map(function(lift){
-      return '<div class="field"><label>'+LIFT_META[lift].name+' FSL sets</label>'
+      return '<div class="field"><label>'+LIFT_META[lift].name+' FSL sets (on '+LIFT_META[PARTNER_LIFT[lift]].name+' day)</label>'
         + '<input type="number" data-fsl-sets="'+lift+'" value="'+state.partnerFslSets[lift]+'" min="0" max="10" step="1"></div>';
+    }).join("");
+
+    var ownFslEl = document.getElementById("ownFslSets");
+    ownFslEl.style.display = state.template==="partnerfsl" ? "" : "none";
+    ownFslEl.innerHTML = LIFTS.map(function(lift){
+      return '<div class="field"><label>'+LIFT_META[lift].name+' FSL sets (same day, after main sets)</label>'
+        + '<input type="number" data-own-fsl-sets="'+lift+'" value="'+state.ownFslSets[lift]+'" min="0" max="10" step="1"></div>';
     }).join("");
 
     var weekChips = document.getElementById("weekChips");
@@ -1101,6 +1119,11 @@
       // output only, so the input keeps focus while typing (same as the plate inputs)
       var n = parseInt(t.value,10);
       state.partnerFslSets[t.dataset.fslSets] = isNaN(n) ? 0 : Math.min(10, Math.max(0, n));
+      renderOutputOnly(); saveState(); return;
+    }
+    if(t.matches("[data-own-fsl-sets]")){
+      var m = parseInt(t.value,10);
+      state.ownFslSets[t.dataset.ownFslSets] = isNaN(m) ? 0 : Math.min(10, Math.max(0, m));
       renderOutputOnly(); saveState(); return;
     }
     if(t.id==="showPlatesCheck"){ state.showPlates = t.checked; render(); return; }
