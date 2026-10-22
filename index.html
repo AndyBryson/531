@@ -224,6 +224,25 @@
   .log-foot .btn{height:48px; flex:1; font-size:15px;}
   .log-msg{font-size:12.5px; color:var(--good);}
 
+  /* replay: planned on the left, what was done on the right */
+  .replay-head{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
+  .replay-head label{font-size:12.5px; color:var(--text-dim);}
+  .replay-head select{font-size:14px; padding:8px 10px;}
+  .replay-title{font-size:22px; margin:6px 0 2px;}
+  .replay-cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:14px; align-items:start; margin:12px 0 26px;}
+  .day-card.unlogged{opacity:.7;}
+  .replay-row .replay-result{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:12.5px; font-weight:600; white-space:nowrap; text-align:right;}
+  .replay-row.done{border-left:4px solid var(--good);}
+  .replay-row.done .replay-result{color:var(--good);}
+  .replay-row.changed{border-left:4px solid var(--accent);}
+  .replay-row.changed .replay-result{color:var(--accent);}
+  .replay-row.missed, .replay-row.skipped{border-left:4px solid var(--warn);}
+  .replay-row.missed .replay-result, .replay-row.skipped .replay-result{color:var(--warn); font-family:var(--sans); font-weight:500; font-style:italic;}
+  .replay-note{font-size:11.5px; font-style:italic; color:var(--text-dim);}
+  .replay-key{display:flex; gap:8px; font-size:11.5px; margin-left:auto;}
+  .replay-key .k{padding-left:6px; border-left:4px solid;}
+  .replay-key .done{border-color:var(--good);} .replay-key .changed{border-color:var(--accent);} .replay-key .missed{border-color:var(--warn);}
+
   @page{size:A4 landscape; margin:8mm;}
 </style>
 <!-- print layout. Kept as its own stylesheet so the page can briefly apply it on
@@ -1534,11 +1553,17 @@
     var p = parseInt(planned.reps, 10);
     return planned.amrap ? reps < p : reps !== p;
   }
+  // logged, but not as planned: a different weight, or different reps
+  function entryChanged(e, slot){
+    if(!e || e.status==="skipped") return false;
+    var p = slot.planned;
+    return (e.weight!=null && p.weight!=null && Math.abs(e.weight-p.weight)>EPS) || (e.status==="reps" && repsDiffer(e.reps, p));
+  }
   function logRowHTML(slot, rec){
     var e = entryForSlot(rec, slot.key);
     var s = slot.s;
     var status = e ? e.status : null;
-    var changed = e && status!=="skipped" && ((e.weight!=null && slot.planned.weight!=null && Math.abs(e.weight-slot.planned.weight)>EPS) || (status==="reps" && repsDiffer(e.reps, slot.planned)));
+    var changed = entryChanged(e, slot);
     var cls = "log-row" + (s.warmup ? " warmup" : "") + (status==="skipped" ? " skipped" : changed ? " changed" : status ? " done" : "");
     var draft = draftWeights[logDate+"|"+slot.key];
     var weight = e && e.weight!=null ? e.weight : draft!=null ? draft : slot.planned.weight;
@@ -1684,7 +1709,6 @@
     if(currentView==="replay") renderReplay();
     saveState();
   }
-  function renderReplay(){}
 
   document.getElementById("viewTabs").addEventListener("click", function(e){
     var b = e.target.closest("[data-view]");
@@ -1779,6 +1803,136 @@
     setTimeout(function(){ msg.textContent = ""; }, 3000);
   });
   function onSessionFinished(){}
+
+  // ---------------- replay ----------------
+  // A past calendar week (Monday to Sunday), drawn with the planner layout from
+  // the programme state saved with that week's sessions, each planned set
+  // showing what was actually done beside it.
+  function parseDate(iso){ var p = iso.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
+  function mondayOf(iso){ var d = parseDate(iso); d.setDate(d.getDate() - (d.getDay()+6)%7); return isoDate(d); }
+  function fmtDay(iso){ return parseDate(iso).toLocaleDateString("en-GB", {weekday:"short", day:"numeric", month:"short"}); }
+  function fmtLongDate(iso){ return parseDate(iso).toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric"}); }
+
+  function loggedWeeks(){
+    var weeks = {};
+    sessionDates().forEach(function(d){ if(liveEntries(sessions[d]).length) weeks[mondayOf(d)] = true; });
+    return Object.keys(weeks).sort().reverse();
+  }
+
+  // runs fn with `state` temporarily swapped for a saved snapshot, so the
+  // planner's own generation and formatting code draw the plan as it was
+  function withState(snapshot, fn){
+    var saved = state;
+    state = mergeState(clone(snapshot));
+    try{ return fn(); } finally { state = saved; }
+  }
+
+  function resultText(e){
+    if(!e) return "";
+    if(e.status==="skipped") return "skipped";
+    var w = e.weight!=null ? fmtWeight(e.weight)+" "+e.unit : "BW";
+    if(e.status==="ticked") return "✓ "+e.reps+" × "+w;
+    return e.reps+" × "+w;
+  }
+  function replayRowHTML(slot, rec){
+    var e = rec ? entryForSlot(rec, slot.key) : null;
+    var cls = "set-row replay-row" + (slot.s.warmup ? " warmup" : "");
+    if(rec){
+      if(!e) cls += " missed";
+      else if(e.status==="skipped") cls += " skipped";
+      else if(entryChanged(e, slot)) cls += " changed";
+      else cls += " done";
+    }
+    var meta = slotMeta(slot.s);
+    var result = rec ? (e ? resultText(e) : "missed") : "";
+    return '<div class="'+cls+'">'
+      + '<div class="set-main"><span class="set-load">'+setLoadText(slot.s)+'</span>'+(meta ? '<span class="set-meta">'+meta+'</span>' : "")
+      + (e && e.note ? '<span class="replay-note">'+escapeAttr(e.note)+'</span>' : "")
+      + '</div>'
+      + '<div class="replay-result">'+escapeAttr(result)+'</div>'
+      + '</div>';
+  }
+  function replayDayHTML(day, dayNum, recs){
+    // more than one session for the same programme day in a week: show them together
+    var rec = null;
+    if(recs.length){
+      rec = {entries:[]};
+      recs.forEach(function(r){ rec.entries = rec.entries.concat(r.entries); });
+    }
+    var body = daySections(day).map(function(sec, i){
+      // like the planner, the main lift's list has no label: the card heading names it
+      return '<div>'+(i ? '<div class="section-label">'+escapeAttr(sec.title)+'</div>' : "")+'<div class="set-list">'
+        + sec.slots.map(function(slot){ return replayRowHTML(slot, rec); }).join("")
+        + '</div></div>';
+    }).join("");
+    var adhoc = liveEntries(rec).filter(function(e){ return !e.planned; });
+    var groups = {}, order = [];
+    adhoc.forEach(function(e){ var k = normName(e.exercise); if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(e); });
+    body += order.map(function(k){
+      return '<div><div class="section-label">'+escapeAttr(groups[k][0].exercise)+' (extra)</div><div class="set-list">'
+        + groups[k].map(function(e){
+          return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">'+escapeAttr(resultText(e))+'</span>'
+            + (e.note ? '<span class="replay-note">'+escapeAttr(e.note)+'</span>' : "")+'</div></div>';
+        }).join("")
+        + '</div></div>';
+    }).join("");
+    var when = recs.length ? recs.map(function(r){ return fmtDay(r.date); }).join(", ") : "not logged";
+    return '<div class="day-card'+(recs.length ? "" : " unlogged")+'">'
+      + '<div class="day-head"><h3>'+LIFT_META[day.lift].name+'</h3><span class="day-idx">Day '+day.dayLabel+' · '+escapeAttr(when)+'</span></div>'
+      + '<div class="day-body">'+body+'</div></div>';
+  }
+
+  var replayWeek = null;
+  function renderReplay(){
+    var el = document.getElementById("replayView");
+    if(!storeReady){ el.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
+    var weeks = loggedWeeks();
+    if(!weeks.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Sessions logged in the Log tab show up here, planned and done side by side.</p>'; return; }
+    if(weeks.indexOf(replayWeek)<0) replayWeek = weeks[0];
+    var end = parseDate(replayWeek); end.setDate(end.getDate()+6);
+    var endIso = isoDate(end);
+    var recs = sessionDates().filter(function(d){ return d>=replayWeek && d<=endIso && liveEntries(sessions[d]).length; }).map(function(d){ return sessions[d]; });
+
+    // usually one programme week per calendar week, but draw each one found
+    var byWeek = {}, weekOrder = [];
+    recs.forEach(function(r){
+      var w = r.programme && r.programme.week || 1;
+      if(!byWeek[w]){ byWeek[w] = []; weekOrder.push(w); }
+      byWeek[w].push(r);
+    });
+    var blocks = weekOrder.map(function(w){
+      var group = byWeek[w];
+      var latest = group[group.length-1];
+      var snapshot = latest.programme.state || state;
+      return withState(snapshot, function(){
+        state.weeks[w] = true; // the week was logged, so draw it even if since hidden
+        var program = generateProgram();
+        var wk = program.weeks.filter(function(x){ return x.week===w; })[0];
+        var cards = wk ? wk.days.map(function(day, i){
+          return replayDayHTML(day, i+1, group.filter(function(r){ return r.programme.day===i+1; }));
+        }).join("") : "";
+        // sessions whose day no longer exists in the snapshot (e.g. 4 days became 3)
+        var stray = group.filter(function(r){ return !wk || r.programme.day > wk.days.length; });
+        stray.forEach(function(r){
+          cards += '<div class="day-card"><div class="day-head"><h3>Day '+r.programme.day+'</h3><span class="day-idx">'+fmtDay(r.date)+'</span></div><div class="day-body">'
+            + liveEntries(r).map(function(e){ return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">'+escapeAttr(e.exercise)+': '+escapeAttr(resultText(e))+'</span></div></div>'; }).join("")
+            + '</div></div>';
+        });
+        var title = latest.programme.title || "Untitled cycle";
+        return '<h2 class="replay-title">'+escapeAttr(title)+' · '+WEEK_LABEL[w]+'</h2>'
+          + '<p class="program-sub">TM: OHP '+fmtWeight(program.tms.ohp)+' · Bench '+fmtWeight(program.tms.bench)+' · Squat '+fmtWeight(program.tms.squat)+' · Deadlift '+fmtWeight(program.tms.deadlift)+' '+unitLabel()+'</p>'
+          + '<div class="replay-cards">'+cards+'</div>';
+      });
+    }).join("");
+
+    el.innerHTML = '<div class="replay-head"><label for="replayWeekSel">Week of</label>'
+      + '<select id="replayWeekSel">'+weeks.map(function(w){ return '<option value="'+w+'"'+(w===replayWeek?" selected":"")+'>'+fmtLongDate(w)+'</option>'; }).join("")+'</select>'
+      + '<span class="replay-key"><span class="k done">done</span><span class="k changed">changed</span><span class="k missed">missed</span></span></div>'
+      + blocks;
+  }
+  document.getElementById("replayView").addEventListener("change", function(e){
+    if(e.target.id==="replayWeekSel"){ replayWeek = e.target.value; renderReplay(); }
+  });
 
   // ---------------- copy / print ----------------
   function buildPlainText(program){

@@ -16,8 +16,12 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Log view: date, programme week and day pickers, then the day's sets from `daySections(day)`. Per set: tick, reps, weight, and a ⋯ menu with comment, skip, clear. "Add set" for ad hoc exercises. "Finish session" confirms (and will trigger a push in step 4).
 - Session record: `{date, programme:{title, week, day, state}, entries:[...], updated, rev}`. Entries as in the plan. `rev` counts local writes for sync (step 4) and is not part of the Drive file.
 
+### Step 3: replay view
+- Replay tab: a select of calendar weeks (Monday to Sunday) that have logged sets, newest first. Each programme week found in that calendar week is drawn from the latest session's `programme.state` snapshot via `withState()`, which swaps the global `state` while the planner's own generation code runs.
+- Each planned set shows its result: done (green), changed (amber, different weight or reps), missed or skipped (red). Comments show under the set. Ad hoc work is listed under its day as "<name> (extra)". Days with no session show the plan only, dimmed. Sessions for a day that no longer exists in the snapshot are listed as plain cards.
+
 ## Next
-- Step 3: replay view.
+- Step 5: manifest, service worker, `navigator.storage.persist()`.
 
 ## Decisions the plan did not cover
 - The workflow file lives on `dev` only until `dev` is merged into `main`. Until then a push to `main` does not redeploy; a push to `dev` (or running the workflow by hand on `dev`) republishes both. Merging dev into main fixes this.
@@ -27,5 +31,7 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - A comment can only be added to a set once it is logged (ticked or reps). The ⋯ menu also has Skip and Clear. Clearing or unticking leaves a tombstone (`deleted: true`).
 - "Changed" marking: weight differs from the plan, or reps differ (for AMRAP only when fewer than prescribed; ranges like 10-15 never count as changed).
 - Ad hoc exercise names are matched to an existing name ignoring case and spacing, and stored with that spelling. "Add set" logs one set and keeps the form filled for the next.
+- Replay groups by calendar week (Monday start), since a programme week number repeats every cycle. A calendar week normally holds one programme week; if it holds more, each is drawn in turn.
+- In replay, a day with a session but no entry for a planned set shows it as missed (warm-ups included).
 - Added `<meta charset="utf-8">`: without it, local servers that send no charset garble "×" and "✓".
 - The `github-pages` environment only allowed `main` and `gh-pages` to deploy; `dev` was added as an allowed branch.

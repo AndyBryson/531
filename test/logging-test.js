@@ -70,6 +70,24 @@ function fire(dom, el, type) { el.dispatchEvent(new dom.window.Event(type, { bub
 function setValue(dom, el, value, type) { el.value = value; fire(dom, el, type || 'change'); }
 const rowBy = (doc, key) => doc.querySelector('#logBody [data-slot="' + key + '"]');
 
+// writes records straight into a fake IndexedDB, creating the app's stores if needed
+function idbPut(factory, dbName, storeName, records, key) {
+  return new Promise((resolve, reject) => {
+    const req = factory.open(dbName, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore('sessions', { keyPath: 'date' }); req.result.createObjectStore('meta'); };
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction(storeName, 'readwrite');
+      records.forEach(r => (key ? tx.objectStore(storeName).put(r, key) : tx.objectStore(storeName).put(r)));
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+function daysFrom(iso, n) { const [y, m, d] = iso.split('-').map(Number); return isoDate(new Date(y, m - 1, d + n)); }
+function mondayOf(iso) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d); return daysFrom(iso, -((dt.getDay() + 6) % 7)); }
+
 (async () => {
   // ---------------- step 1: dev detection ----------------
   {
@@ -220,6 +238,65 @@ const rowBy = (doc, key) => doc.querySelector('#logBody [data-slot="' + key + '"
     await wait(30);
     log('no IndexedDB: logging still works in memory', rowBy(dom.doc, 'main:3').classList.contains('done'));
     done(dom);
+  }
+
+
+  // ---------------- step 3: replay ----------------
+  {
+    const idb = new IDBFactory();
+    const lastMon = daysFrom(mondayOf(TODAY), -7);
+    const lastTue = daysFrom(lastMon, 1);
+    const twoWeeksAgo = daysFrom(lastMon, -5);
+    // the plan as it was last week: different TMs and title from today's defaults
+    const snapshot = { programTitle: 'Cycle 3', template: 'standard', lifts: {
+      ohp: { mode: 'tm', value: 50, reps: 1 }, bench: { mode: 'tm', value: 80, reps: 1 },
+      squat: { mode: 'tm', value: 120, reps: 1 }, deadlift: { mode: 'tm', value: 150, reps: 1 } } };
+    const planned = (key, set, reps, weight, amrap) => ({ key, lift: 'ohp', kind: 'work', set, reps, amrap: !!amrap, weight });
+    await idbPut(idb, '531-planner', 'sessions', [
+      { date: lastTue, programme: { title: 'Cycle 3', week: 1, day: 1, state: snapshot }, updated: lastTue + 'T18:00:00Z', rev: 1, entries: [
+        { id: 'a', t: 'x', exercise: 'Overhead Press', weight: 32.5, unit: 'kg', reps: 5, status: 'ticked', planned: planned('main:3', 1, 5, 32.5), note: '' },
+        { id: 'b', t: 'x', exercise: 'Overhead Press', weight: 37.5, unit: 'kg', reps: 3, status: 'reps', planned: planned('main:4', 2, 5, 37.5), note: 'tired' },
+        { id: 'c', t: 'x', exercise: 'Overhead Press', weight: 42.5, unit: 'kg', reps: 9, status: 'reps', planned: planned('main:5', 3, 5, 42.5, true), note: '', deleted: true },
+        { id: 'd', t: 'x', exercise: 'Cossack squat', weight: 24, unit: 'kg', reps: 8, status: 'reps', planned: null, note: '' },
+      ] },
+      { date: twoWeeksAgo, programme: { title: 'Cycle 2', week: 3, day: 2, state: Object.assign({}, snapshot, { programTitle: 'Cycle 2' }) }, updated: 'x', rev: 1, entries: [
+        { id: 'e', t: 'x', exercise: 'Deadlift', weight: 140, unit: 'kg', reps: 1, status: 'ticked', planned: { key: 'main:3', lift: 'deadlift', kind: 'work', set: 1, reps: 5, amrap: false, weight: 140 }, note: '' },
+      ] },
+    ]);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    const doc = dom.doc;
+    await wait(200);
+    log('#v=replay opens the replay view', doc.body.dataset.view === 'replay');
+    const sel = doc.getElementById('replayWeekSel');
+    log('replay lists logged calendar weeks, newest first', !!sel && sel.options.length === 2 && sel.value === lastMon && sel.options[1].value === mondayOf(twoWeeksAgo));
+    const view = doc.getElementById('replayView');
+    log('replay titles the week from the snapshot (Cycle 3, Week 1)', /Cycle 3 · Week 1/.test(view.querySelector('.replay-title').textContent));
+    log('replay uses the snapshot TMs, not the current programme', /OHP 50/.test(view.textContent) && /Deadlift 150/.test(view.textContent));
+    const cards = view.querySelectorAll('.day-card');
+    log('replay shows every day of that programme week', cards.length === 4);
+    const day1 = cards[0];
+    const mainRows = day1.querySelectorAll('.set-list')[0].querySelectorAll('.replay-row');
+    log('day 1 shows the snapshot plan (3 warm-ups + 3 work sets, standard template)', mainRows.length === 6 && /5 × 32\.5 kg/.test(mainRows[3].textContent));
+    log('a ticked set is marked done with its result', mainRows[3].classList.contains('done') && /✓ 5 × 32\.5 kg/.test(mainRows[3].querySelector('.replay-result').textContent));
+    log('a short set is marked changed, with its comment', mainRows[4].classList.contains('changed') && /3 × 37\.5 kg/.test(mainRows[4].textContent) && /tired/.test(mainRows[4].textContent));
+    log('a deleted (tombstoned) set counts as missed', mainRows[5].classList.contains('missed') && /missed/.test(mainRows[5].textContent));
+    log('warm-ups not logged on a logged day show as missed', mainRows[0].classList.contains('missed'));
+    log('ad hoc exercise listed under its day after the programme sets', /Cossack squat \(extra\)/.test(day1.textContent) && /8 × 24 kg/.test(day1.textContent));
+    log('day card says which date it was logged', day1.querySelector('.day-idx').textContent.includes('Day 1'));
+    log('a day with no session shows the plan only', cards[1].classList.contains('unlogged') && /not logged/.test(cards[1].textContent) && !cards[1].querySelector('.missed, .done'));
+    setValue(dom, sel, mondayOf(twoWeeksAgo));
+    await wait(30);
+    const v2 = doc.getElementById('replayView');
+    log('picking another week redraws it (Cycle 2, Week 3)', /Cycle 2 · Week 3/.test(v2.querySelector('.replay-title').textContent));
+    const dl = v2.querySelectorAll('.day-card')[1];
+    log('week 3 day 2 shows the logged deadlift set as changed (1 rep at 140, plan 5)', /Deadlift/.test(dl.querySelector('h3').textContent) && dl.querySelectorAll('.replay-row.done, .replay-row.changed').length === 1);
+    log('replay never changes the current programme', doc.getElementById('programTitle').value === '' && /OHP 55 /.test(doc.getElementById('programSub').textContent));
+    done(dom);
+
+    const empty = load({ url: 'https://andybryson.github.io/531/#v=replay', idb: new IDBFactory() });
+    await wait(150);
+    log('replay with nothing logged says so', /Nothing logged yet/.test(empty.doc.getElementById('replayView').textContent));
+    done(empty);
   }
 
   console.log('\nFINAL total runtime errors:', totalErrors);
