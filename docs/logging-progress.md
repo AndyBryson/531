@@ -40,6 +40,12 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Google Cloud project `planner-512420` set up by Andy (Drive API, External/Testing, agbryson@gmail.com as test user, `drive.file`, Web client "531 Planner web" with origins `https://andybryson.github.io` and `http://localhost:8000`). `GOOGLE_CLIENT_ID` now holds its client ID. No client secret is used or stored.
 - Tests no longer depend on the real ID: they set their own via `withClientId()` (empty for the "sync off" checks, a test ID for the GIS checks).
 
+### Programme out of the URL (Andy's follow-up)
+- The address bar no longer carries the programme: `saveState()` writes only `v=` (or nothing) once the store has loaded. The programme lives in IndexedDB and, when linked, Drive's `programme.json`.
+- "Copy share link" (next to Copy program) builds `#s=` on demand. Opening one imports it, then the hash is cleared.
+- With the memory fallback (no IndexedDB) the URL still holds `s=`, so nothing is lost on reload there.
+- Kept to one programme at a time, as before. A library of past programmes was not built; replay already keeps each week's programme snapshot.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

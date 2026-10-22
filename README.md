@@ -8,7 +8,7 @@ Independent build — not affiliated with Jim Wendler or any 5/3/1 app.
 
 ## Use it
 
-Open `index.html` in a browser, or use the link above. The planner state is encoded in the URL, so the address bar is always a shareable link to the exact programme on screen. It is also saved in the browser along with your workout log.
+Open `index.html` in a browser, or use the link above. The programme is saved in the browser along with your workout log (and in Google Drive once linked), so the address bar stays short. "Copy share link" copies a link with the programme in it; opening that link loads the programme.
 
 For local development serve the folder (`python3 -m http.server 8000`) rather than opening the file, so IndexedDB and the service worker work.
 
@@ -22,7 +22,7 @@ For local development serve the folder (`python3 -m http.server 8000`) rather th
 - Print layout: A4 landscape, one week per page, a day per column
 - Workout log (Log tab): the day's plan as a checklist. Per set: one tap ticks it as prescribed, a reps field logs a different count (AMRAP sets go straight to reps), the weight is editable, and the ⋯ button adds a comment or skips the set. Log any other exercise with "Add set" (names autocomplete from the main lifts, your accessories and anything logged before). Suggests the next programme day after the last session.
 - Replay (Replay tab): pick a past calendar week and see it in the planner layout, using the programme as it was when those sessions were logged, with what was done beside each planned set: done, changed (different weight or reps, with any comment), or missed. Extra exercises are listed under their day; days with nothing logged show the plan only. Screen only, no print layout.
-- Saved on the device: the programme and logs are kept in the browser's IndexedDB, so the app opens with your programme even without a share link. A share link in the URL still wins.
+- Saved on the device: the programme and logs are kept in the browser's IndexedDB, so the app opens with your programme from a plain URL. Share links (Copy share link) still work: opening one loads its programme. Browsers without IndexedDB keep the programme in the URL as before.
 - Google Drive sync (Settings, Google Drive, Link to Google): the programme and every session are kept in a "531 Planner" folder in your Drive (`programme.json` and `sessions/<date>.json`), so the phone and laptop share them. The device's own copy stays the working copy: logging never waits for Drive, changes queue and sync shortly after, on Finish session, and when the app comes back into view. The status pill in the top bar shows Local only / Pending / Synced / Sync failed; tap it to sync (or to sign in again, about once an hour). Sessions edited on two devices are merged set by set. Opening a share link while linked asks before replacing the programme.
 - Installable on a phone (Chrome: menu, Add to Home screen / Install app). Opens straight to the Log tab and works offline; a service worker keeps a copy of the app. The installed app asks the browser to keep its storage.
 - Dev build at https://andybryson.github.io/531/dev/ (the `dev` branch), with its own storage and a DEV banner

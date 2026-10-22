@@ -416,6 +416,7 @@
         <span class="program-sub" id="programSub"></span>
         <div class="program-actions">
           <button class="btn" id="copyBtn">Copy program</button>
+          <button class="btn" id="shareBtn" title="Copies a link with this programme in it, to open on another device or send to someone">Copy share link</button>
           <button class="btn primary" id="printBtn">Print</button>
         </div>
       </div>
@@ -605,11 +606,18 @@
       clearTimeout(saveTimer);
       saveTimer = setTimeout(function(){
         try{
-          var hash = "#s="+toBase64Url(JSON.stringify(state)) + (currentView!=="plan" ? "&v="+currentView : "");
-          // replaceState, not location.hash=, so every keystroke doesn't spam
-          // browser history — the URL still updates live, just without a new
-          // back-button entry per edit
-          history.replaceState(null, "", hash);
+          // The programme is saved in IndexedDB (and Drive when linked), so the
+          // address bar only carries the view; "Copy share link" makes a link
+          // with the programme in it. Without IndexedDB the URL is still the
+          // save file, as it used to be. Nothing is written until the store has
+          // loaded, so an incoming share link is read before it is cleared.
+          // replaceState, not location.hash=, so edits don't spam browser history.
+          if(storeReady){
+            var parts = [];
+            if(store && store.kind==="memory") parts.push("s="+toBase64Url(JSON.stringify(state)));
+            if(currentView!=="plan") parts.push("v="+currentView);
+            history.replaceState(null, "", parts.length ? "#"+parts.join("&") : location.pathname+location.search);
+          }
         }catch(e){}
         persistProgramme();
       }, 250);
@@ -2350,10 +2358,8 @@
     return lines.join("\n");
   }
 
-  document.getElementById("copyBtn").addEventListener("click", function(){
-    var text = buildPlainText(generateProgram());
-    var btn = document.getElementById("copyBtn");
-    function done(ok){ btn.textContent = ok ? "Copied" : "Copy failed"; setTimeout(function(){ btn.textContent = "Copy program"; }, 1500); }
+  function copyText(text, btn, label){
+    function done(ok){ btn.textContent = ok ? "Copied" : "Copy failed"; setTimeout(function(){ btn.textContent = label; }, 1500); }
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(text).then(function(){done(true);}).catch(function(){done(false);});
     } else {
@@ -2366,6 +2372,14 @@
         done(true);
       }catch(e){ done(false); }
     }
+  }
+  document.getElementById("copyBtn").addEventListener("click", function(){
+    copyText(buildPlainText(generateProgram()), this, "Copy program");
+  });
+  // the programme no longer rides in the address bar, so sharing it is explicit
+  function shareLink(){ return location.origin+location.pathname+"#s="+toBase64Url(JSON.stringify(state)); }
+  document.getElementById("shareBtn").addEventListener("click", function(){
+    copyText(shareLink(), this, "Copy share link");
   });
 
   // Size the print layout so each week fills one A4 landscape page: as large as

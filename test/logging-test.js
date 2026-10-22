@@ -664,6 +664,49 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(G);
   }
 
+
+  // ---------------- programme kept out of the URL ----------------
+  {
+    const idb = new IDBFactory();
+    const plan = { programTitle: 'From a link', template: 'fsl', lifts: { ohp: { mode: 'tm', value: 55, reps: 1 } } };
+    const hash = '#s=' + Buffer.from(JSON.stringify(plan)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const A = load({ url: 'https://andybryson.github.io/531/dev/' + hash, idb });
+    await wait(450);
+    log('a share link is imported', A.doc.getElementById('programTitle').value === 'From a link' && A.doc.getElementById('templateSelect').value === 'fsl');
+    log('then the programme is cleared from the address bar', A.window.location.hash === '' && !/s=/.test(A.window.location.href));
+    setValue(A, A.doc.getElementById('programTitle'), 'Edited', 'input');
+    await wait(350);
+    log('editing the programme keeps it out of the URL', A.window.location.hash === '');
+    A.doc.querySelector('#viewTabs [data-view="log"]').click();
+    await wait(300);
+    log('the URL carries only the view', A.window.location.hash === '#v=log');
+    let copied = null;
+    A.window.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
+    A.doc.querySelector('#viewTabs [data-view="plan"]').click();
+    A.doc.getElementById('shareBtn').click();
+    await wait(20);
+    log('Copy share link copies a link with the programme in it', !!copied && copied.indexOf('https://andybryson.github.io/531/dev/#s=') === 0 && /Copied/.test(A.doc.getElementById('shareBtn').textContent));
+    done(A);
+
+    const B = load({ url: 'https://andybryson.github.io/531/dev/', idb });
+    await wait(200);
+    log('reopening with a bare URL loads the saved programme', B.doc.getElementById('programTitle').value === 'Edited');
+    done(B);
+
+    const C = load({ url: copied, idb: new IDBFactory() });
+    await wait(200);
+    log('the copied share link opens the same programme on another device', C.doc.getElementById('programTitle').value === 'Edited' && C.doc.getElementById('templateSelect').value === 'fsl');
+    done(C);
+
+    // without IndexedDB the URL is still the save file
+    const M = load({ url: 'https://andybryson.github.io/531/' });
+    await wait(150);
+    setValue(M, M.doc.getElementById('programTitle'), 'Memory only', 'input');
+    await wait(350);
+    log('without IndexedDB, the programme stays in the URL as before', /^#s=/.test(M.window.location.hash));
+    done(M);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();
