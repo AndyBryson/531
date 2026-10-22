@@ -46,6 +46,9 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - With the memory fallback (no IndexedDB) the URL still holds `s=`, so nothing is lost on reload there.
 - Kept to one programme at a time, as before. A library of past programmes was not built; replay already keeps each week's programme snapshot.
 
+- The service worker fetches the page with `cache: "no-cache"`: GitHub Pages sends `max-age=600`, so a plain network-first fetch could serve a page up to 10 minutes old after a deploy (seen in Chrome on 22 Oct).
+- Set up in Andy's Chrome on 22 Oct: the "2026-10-05" programme (partner FSL) is in the dev Drive folder `531 Planner (dev)`. An earlier test folder with only defaults was renamed `531 Planner (dev) (old 2026-10-22)` by Start from scratch.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

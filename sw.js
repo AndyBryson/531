@@ -39,7 +39,9 @@ function fromCacheThenRefresh(cacheName, request){
 
 function pageNetworkFirst(request){
   return caches.open(CACHE).then(function(cache){
-    var network = fetch(request).then(function(res){
+    // no-cache: revalidate with the server, as GitHub Pages lets browsers keep
+    // a page for 10 minutes, which would hide a fresh deploy for that long
+    var network = fetch(request.url, {cache:"no-cache", credentials:"same-origin"}).then(function(res){
       if(res && res.ok) cache.put(SCOPE, res.clone());
       return res;
     });

@@ -422,11 +422,12 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(app);
 
     // the service worker's routing, run in a sandbox with a fake worker scope
+    const swFetches = [];
     function swRoutes(scope) {
       const handlers = {};
       const sandbox = { self: { registration: { scope }, addEventListener: (t, f) => { handlers[t] = f; }, clients: { claim() {} }, skipWaiting() {} },
         caches: { open: () => Promise.resolve({ match: () => Promise.resolve(null), put() {}, addAll: () => Promise.resolve() }) },
-        fetch: () => Promise.resolve({ ok: true, clone() { return this; } }), URL, Promise, setTimeout };
+        fetch: (u, o) => { swFetches.push({ u, o }); return Promise.resolve({ ok: true, clone() { return this; } }); }, URL, Promise, setTimeout };
       vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
       return (url, mode) => {
         let handled = false;
@@ -436,6 +437,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     }
     const prodSw = swRoutes('https://andybryson.github.io/531/');
     log('prod worker handles the prod page', prodSw('https://andybryson.github.io/531/', 'navigate') === true);
+    log('page loads revalidate with the server (no-cache), so a deploy shows at once', swFetches.some(f => f.u === 'https://andybryson.github.io/531/' && f.o && f.o.cache === 'no-cache'));
     log('prod worker ignores everything under /531/dev/', prodSw('https://andybryson.github.io/531/dev/', 'navigate') === false && prodSw('https://andybryson.github.io/531/dev/sw.js') === false);
     log('prod worker leaves Google sign-in and Drive to the network', prodSw('https://accounts.google.com/gsi/client') === false && prodSw('https://www.googleapis.com/drive/v3/files') === false);
     log('fonts are served cache-first for offline use', prodSw('https://fonts.gstatic.com/s/oswald.woff2') === true);
