@@ -54,6 +54,10 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Added sets are entries with `planned: {key: "<section>:extra", kind: "extra", ...}` (sections are `main`, `light`, `acc:<exercise id>`); on ad hoc blocks they are plain `planned: null` entries of that exercise. Weight and reps stay editable in place; × removes (tombstone).
 - Replay lists added sets under their block as "added set" with the result. No volume-based judging: Andy only wants planned vs done side by side.
 
+### Comments on every set (22 Oct)
+- The ⋯ comment field now shows on every planned set, logged or not, and on skipped sets; added sets get their own ⋯ for a comment. A comment typed before the set is logged is held (in memory, not saved) and attached when the set is ticked, given reps or skipped.
+- Replaces the earlier rule that a comment could only be added once a set was logged.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 
@@ -71,7 +75,7 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Each planned set's slot key (`planned.key`) is `main:<n>`, `light:<n>` or `acc:<exercise id>:<n>`, its position in the day's list. Changing the template mid-day can shift keys; accepted.
 - The programme snapshot (`programme.state`) is refreshed on every write to that day's session, so it holds the plan as it stood at the last set logged.
 - Programme day suggestion: a date with no session suggests the day after the most recent earlier session (rolling into the next included week), else week 1 day 1. Picking a week/day by hand overrides it.
-- A comment can only be added to a set once it is logged (ticked or reps). The ⋯ menu also has Skip and Clear. Clearing or unticking leaves a tombstone (`deleted: true`).
+- (Superseded 22 Oct: comments now work on any set.) The ⋯ menu also has Skip and Clear. Clearing or unticking leaves a tombstone (`deleted: true`).
 - "Changed" marking: weight differs from the plan, or reps differ (for AMRAP only when fewer than prescribed; ranges like 10-15 never count as changed).
 - Ad hoc exercise names are matched to an existing name ignoring case and spacing, and stored with that spelling. "Add set" logs one set and keeps the form filled for the next.
 - Replay groups by calendar week (Monday start), since a programme week number repeats every cycle. A calendar week normally holds one programme week; if it holds more, each is drawn in turn.

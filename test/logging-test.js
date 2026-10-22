@@ -780,6 +780,55 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(again);
   }
 
+
+  // ---------------- comments on every set ----------------
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    const doc = dom.doc;
+    await wait(150);
+    const entryFor = async key => (await idbGet(idb, '531-planner', 'sessions', TODAY)).entries.find(e => e.planned && e.planned.key === key && !e.deleted);
+    // a warm-up, not yet logged: comment first, then tick
+    rowBy(doc, 'main:0').querySelector('[data-act="more"]').click();
+    await wait(10);
+    const note0 = rowBy(doc, 'main:0').querySelector('[data-act="note"]');
+    log('an unlogged set offers a comment field', !!note0 && /saved when you log/.test(note0.placeholder));
+    setValue(dom, note0, 'bar felt heavy');
+    rowBy(doc, 'main:0').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    log('a comment typed before logging is saved with the set', (await entryFor('main:0')).note === 'bar felt heavy' && /bar felt heavy/.test(rowBy(doc, 'main:0').textContent));
+    // a ticked work set: comment after
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(10);
+    rowBy(doc, 'main:3').querySelector('[data-act="more"]').click();
+    await wait(10);
+    setValue(dom, rowBy(doc, 'main:3').querySelector('[data-act="note"]'), 'easy');
+    await wait(30);
+    log('a ticked set takes a comment', (await entryFor('main:3')).note === 'easy');
+    // a skipped set keeps a comment
+    rowBy(doc, 'main:6').querySelector('[data-act="more"]').click();
+    await wait(10);
+    setValue(dom, rowBy(doc, 'main:6').querySelector('[data-act="note"]'), 'short on time');
+    rowBy(doc, 'main:6').querySelector('[data-act="skip"]').click();
+    await wait(30);
+    log('a skipped set keeps its comment', (await entryFor('main:6')).status === 'skipped' && (await entryFor('main:6')).note === 'short on time' && /Skipped · short on time/.test(rowBy(doc, 'main:6').textContent));
+    // an added set
+    const dipSec = () => Array.from(doc.querySelectorAll('#logBody .log-section')).find(sec => sec.querySelector('h3').textContent === 'Dip');
+    dipSec().querySelector('[data-act="addset"]').click();
+    await wait(20);
+    dipSec().querySelector('.log-row.added [data-act="enotes"]').click();
+    await wait(10);
+    setValue(dom, dipSec().querySelector('.log-row.added [data-act="enote"]'), 'ring dips');
+    await wait(30);
+    log('an added set takes a comment', (await entryFor('acc:ex1:extra')).note === 'ring dips');
+    done(dom);
+    const R = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    await wait(200);
+    const txt = R.doc.getElementById('replayView').textContent;
+    log('replay shows comments on ticked, skipped and added sets', /bar felt heavy/.test(txt) && /short on time/.test(txt) && /ring dips/.test(txt));
+    done(R);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();
