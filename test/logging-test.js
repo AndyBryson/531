@@ -171,6 +171,8 @@ function makeFakeDriveFetch() {
   };
   return { fetch: fakeFetch, reqs, files };
 }
+// swaps the page's GOOGLE_CLIENT_ID, so tests do not depend on the real one
+const withClientId = id => html => html.replace(/var GOOGLE_CLIENT_ID = "[^"]*";/, 'var GOOGLE_CLIENT_ID = "' + id + '";');
 const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + act + '"]');
 
 (async () => {
@@ -446,7 +448,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
   // ---------------- step 4: Google link and Drive sync ----------------
   {
     // no client ID and no fakes: the page works, sync is off, nothing from Google loads
-    const plain = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory() });
+    const plain = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory(), transform: withClientId('') });
     await wait(150);
     log('without a client ID, Link is disabled and says why', plain.doc.querySelector('#googleBody button').disabled && /GOOGLE_CLIENT_ID/.test(plain.doc.getElementById('googleBody').textContent));
     log('sync pill says Local only when not linked', plain.doc.getElementById('syncPill').textContent === 'Local only');
@@ -634,7 +636,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
       return { requestAccessToken: o => { requested.push(o); setTimeout(() => closePopup ? cfg.error_callback({ type: 'popup_closed' }) : cfg.callback({ access_token: 'gis-token', expires_in: 3599 }), 5); } };
     } } } };
     const G = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory(),
-      transform: html => html.replace('var GOOGLE_CLIENT_ID = "";', 'var GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";'),
+      transform: withClientId('test-client.apps.googleusercontent.com'),
       beforeParse: w => {
         w.fetch = gfetch;
         // jsdom does not fetch external scripts: stand in for the GIS script loading

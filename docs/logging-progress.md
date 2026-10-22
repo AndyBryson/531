@@ -36,9 +36,12 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Share link while linked: `confirm()` before replacing the programme (on load and on `hashchange`).
 - Tests: `FakeDrive` + fake auth (two devices sharing one Drive: link, load, merge, tombstones, last write wins, failure and retry, start from scratch, share-link prompt, dev folder), the real REST client against a fake `fetch`, and the real GIS wrapper against a fake `google.accounts.oauth2` with a test client ID.
 
+### Client ID set
+- Google Cloud project `planner-512420` set up by Andy (Drive API, External/Testing, agbryson@gmail.com as test user, `drive.file`, Web client "531 Planner web" with origins `https://andybryson.github.io` and `http://localhost:8000`). `GOOGLE_CLIENT_ID` now holds its client ID. No client secret is used or stored.
+- Tests no longer depend on the real ID: they set their own via `withClientId()` (empty for the "sync off" checks, a test ID for the GIS checks).
+
 ## Next
-- Andy: Google Cloud setup (below), then put the client ID in `GOOGLE_CLIENT_ID` on `dev` and try it on the phone.
-- Then: real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
+- Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 
 ## Google Cloud setup (for Andy)
 1. https://console.cloud.google.com: create a project, e.g. "531 Planner".
