@@ -1,0 +1,129 @@
+diff --git a/README.md b/README.md
+index 4c72411..c92e136 100644
+--- a/README.md
++++ b/README.md
+@@ -29,7 +29,7 @@ Fixed 3-day split, independent of the days/week and lift-order settings:
+ 
+ ### Standard + partner FSL
+ 
+-Uses the normal days/week and lift-order settings. Each day is its main lift's full wave, then sets of 5 on its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set percentage for that week (65/70/75% of the partner's TM). The number of FSL sets is set per lift (default 5, 0 turns it off). Skipped on the deload week.
++Uses the normal days/week and lift-order settings. Each day is its main lift's full wave, then sets of 5 on its partner lift (OHP↔Bench, Squat↔Deadlift) at the partner's first work-set percentage for that week (65/70/75% of the partner's TM). The number of FSL sets is set per lift (default 5, 0 turns it off). Skipped on the deload week. A second set of inputs adds optional own-lift FSL (default 0): sets of 5 of the day's own lift at the same percentage, straight after its main sets, also skipped on the deload week.
+ 
+ ## Development
+ 
+diff --git a/index.html b/index.html
+index 1454bea..57e17f8 100644
+--- a/index.html
++++ b/index.html
+@@ -276,6 +276,7 @@
+         </div>
+         <p class="hint" id="templateBlurb"></p>
+         <div id="partnerFslSets" style="display:none; margin-top:10px;"></div>
++        <div id="ownFslSets" style="display:none; margin-top:10px;"></div>
+         <div class="ctrl-row" style="margin-top:10px;"><label>Weeks to show</label></div>
+         <div class="weekchips" id="weekChips"></div>
+       </section>
+@@ -420,6 +421,8 @@
+       programTitle:"",
+       // Standard + partner FSL: sets of 5 for each lift when it's done as FSL on its partner's day
+       partnerFslSets:{ohp:5, bench:5, squat:5, deadlift:5},
++      // Standard + partner FSL: optional sets of 5 of the day's own lift, straight after its main sets (0 = off)
++      ownFslSets:{ohp:0, bench:0, squat:0, deadlift:0},
+       accessories:{
+         ohp:[{id:"ex1", name:"Dip", sets:3, reps:"10-15", weighted:false, weight:0}],
+         bench:[{id:"ex2", name:"Bicep Curl", sets:3, reps:"10-15", weighted:false, weight:0}],
+@@ -443,7 +446,8 @@
+         weeks:Object.assign(d.weeks, parsed.weeks||{}),
+         accessories:Object.assign(d.accessories, parsed.accessories||{}),
+         plates:Object.assign({}, d.plates, parsed.plates||{}),
+-        partnerFslSets:Object.assign({}, d.partnerFslSets, parsed.partnerFslSets||{})
++        partnerFslSets:Object.assign({}, d.partnerFslSets, parsed.partnerFslSets||{}),
++        ownFslSets:Object.assign({}, d.ownFslSets, parsed.ownFslSets||{})
+       });
+     }catch(e){ return defaultState(); }
+   }
+@@ -734,6 +738,13 @@
+     var assistance = assistanceForTemplate(state.template, weekNum, tm, roundIncrement).map(function(a){
+       return {label:a.label, reps:a.reps, weight:a.weight, pct:a.pct, sets:a.sets, warmup:false, amrap:false, isAssistance:true};
+     });
++    if(state.template==="partnerfsl" && !isDeload){
++      var ownSets = state.ownFslSets[lift]||0;
++      if(ownSets>0){
++        var ownPct = WEEK_SCHEMES[weekNum][0].pct;
++        assistance.push({label:"FSL", reps:String(PARTNER_FSL_REPS), weight:roundTo(tm*ownPct, roundIncrement), pct:ownPct, sets:ownSets, warmup:false, amrap:false, isAssistance:true});
++      }
++    }
+     var lightBlock = [];
+     if(descriptor.light){
+       if(descriptor.lightMode==="full"){
+@@ -952,10 +963,17 @@
+     var fslSetsEl = document.getElementById("partnerFslSets");
+     fslSetsEl.style.display = state.template==="partnerfsl" ? "" : "none";
+     fslSetsEl.innerHTML = LIFTS.map(function(lift){
+-      return '<div class="field"><label>'+LIFT_META[lift].name+' FSL sets</label>'
++      return '<div class="field"><label>'+LIFT_META[lift].name+' FSL sets (on '+LIFT_META[PARTNER_LIFT[lift]].name+' day)</label>'
+         + '<input type="number" data-fsl-sets="'+lift+'" value="'+state.partnerFslSets[lift]+'" min="0" max="10" step="1"></div>';
+     }).join("");
+ 
++    var ownFslEl = document.getElementById("ownFslSets");
++    ownFslEl.style.display = state.template==="partnerfsl" ? "" : "none";
++    ownFslEl.innerHTML = LIFTS.map(function(lift){
++      return '<div class="field"><label>'+LIFT_META[lift].name+' FSL sets (same day, after main sets)</label>'
++        + '<input type="number" data-own-fsl-sets="'+lift+'" value="'+state.ownFslSets[lift]+'" min="0" max="10" step="1"></div>';
++    }).join("");
++
+     var weekChips = document.getElementById("weekChips");
+     weekChips.innerHTML = [1,2,3,4].map(function(w){
+       return '<label class="chip"><input type="checkbox" data-week="'+w+'" '+(state.weeks[w]?"checked":"")+'>'+WEEK_LABEL[w]+'</label>';
+@@ -1103,6 +1121,11 @@
+       state.partnerFslSets[t.dataset.fslSets] = isNaN(n) ? 0 : Math.min(10, Math.max(0, n));
+       renderOutputOnly(); saveState(); return;
+     }
++    if(t.matches("[data-own-fsl-sets]")){
++      var m = parseInt(t.value,10);
++      state.ownFslSets[t.dataset.ownFslSets] = isNaN(m) ? 0 : Math.min(10, Math.max(0, m));
++      renderOutputOnly(); saveState(); return;
++    }
+     if(t.id==="showPlatesCheck"){ state.showPlates = t.checked; render(); return; }
+   });
+ 
+diff --git a/test/dom-test.js b/test/dom-test.js
+index 1281ec0..3fc70d1 100644
+--- a/test/dom-test.js
++++ b/test/dom-test.js
+@@ -282,6 +282,35 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+     log('partner FSL skipped on the deload week', w4.length > 0 && w4.every(c => /FSL skipped on the deload week/.test(c.textContent)));
+   }
+ 
++  // --- own-lift FSL: optional sets of 5 of the day's own lift after its main sets ---
++  {
++    log('own FSL inputs shown for partner FSL', doc.getElementById('ownFslSets').style.display !== 'none' && doc.querySelectorAll('[data-own-fsl-sets]').length === 4);
++    const tmText = doc.getElementById('programSub').textContent;
++    const benchTm = parseFloat((tmText.match(/Bench ([\d.]+)/) || [])[1]);
++    const benchCard = w => Array.from(doc.querySelectorAll('[data-week-panel="' + w + '"] .day-card')).find(c => cardTitle(c) === 'Bench Press');
++    log('own FSL is off by default', !/FSL/.test(benchCard(1).querySelectorAll('.set-list')[0].textContent));
++    const ownBench = doc.querySelector('[data-own-fsl-sets="bench"]');
++    ownBench.value = '5';
++    ownBench.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
++    await wait(20);
++    [[1, .65], [2, .70], [3, .75]].forEach(([w, pct]) => {
++      const card = benchCard(w);
++      const mainRows = Array.from(card.querySelectorAll('.set-list')[0].querySelectorAll('.set-row'));
++      const fslRows = mainRows.filter(r => /FSL/.test(r.textContent));
++      const expected = Math.round(benchTm * pct / 2.5) * 2.5;
++      log('week ' + w + ' bench day: own FSL is 5 rows of 5 @ ' + expected + ' in the main list',
++        fslRows.length === 5 && fslRows.every(r => rowWeight(r) === expected && /^5 ×/.test(r.querySelector('.set-load').textContent.trim())) &&
++        mainRows.indexOf(fslRows[0]) === mainRows.length - 5);
++      log('week ' + w + ' bench day: OHP partner FSL block unchanged', /Overhead Press — FSL/.test(card.textContent) && card.querySelectorAll('.set-list')[1].querySelectorAll('.set-row').length === 5);
++    });
++    log('own FSL absent on the deload week', !/FSL/.test(benchCard(4).querySelectorAll('.set-list')[0].textContent));
++    log('own FSL on bench does not appear on other lifts', !/FSL/.test(Array.from(doc.querySelectorAll('[data-week-panel="1"] .day-card')).find(c => cardTitle(c) === 'Squat').querySelectorAll('.set-list')[0].textContent));
++    ownBench.value = '0';
++    ownBench.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
++    await wait(20);
++    log('own FSL set back to 0 removes it', !/FSL/.test(benchCard(1).querySelectorAll('.set-list')[0].textContent));
++  }
++
+   // --- plate-quantity limiting: with only ONE 20kg plate per side, a target that
+   // greedily wants two 20s should fall back to an achievable combo instead of
+   // silently pretending it has plates it doesn't ---
