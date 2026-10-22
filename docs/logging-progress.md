@@ -85,6 +85,9 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Replay's day cards are sorted by the date each day was first logged; days not logged yet follow in plan order. A week done as 3, 1, 2, 4 reads that way.
 - Logging days out of order already works (sets carry their own week and day). The Log tab's suggestion is still "the day after the last one logged", so after an out-of-order day it may need picking by hand.
 
+### Promoted to main (22 Oct)
+- `dev` merged into `main` (fast-forward) at Andy's request. The live site now has logging, replay, install and Drive sync. It uses its own IndexedDB (`531-planner`) and Drive folder (`531 Planner`), separate from dev's, so it needs linking once on each device. The deploy workflow is now on `main`, so a push to either branch republishes both.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 
