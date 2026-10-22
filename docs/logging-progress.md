@@ -58,6 +58,10 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - The ⋯ comment field now shows on every planned set, logged or not, and on skipped sets; added sets get their own ⋯ for a comment. A comment typed before the set is logged is held (in memory, not saved) and attached when the set is ticked, given reps or skipped.
 - Replaces the earlier rule that a comment could only be added once a set was logged.
 
+### Ticking keeps typed reps (22 Oct, bug from Andy)
+- Typing reps and then tapping the tick used to overwrite them with the planned reps. The tick now reads the row's reps field: empty means as planned, otherwise those reps are logged with status `ticked`. Changing the reps of a ticked set keeps it ticked; clearing them returns to the plan.
+- A ticked set whose reps differ from the plan shows "Done, N reps" and counts as changed. Reps are compared as numbers, since planned reps can be strings ("10" for BBB).
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

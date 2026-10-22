@@ -829,6 +829,42 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(R);
   }
 
+
+  // ---------------- typed reps survive a tick ----------------
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    const doc = dom.doc;
+    await wait(150);
+    const entryFor = async key => (await idbGet(idb, '531-planner', 'sessions', TODAY)).entries.find(e => e.planned && e.planned.key === key && !e.deleted);
+    // reps typed and committed, then ticked
+    setValue(dom, rowBy(doc, 'main:4').querySelector('[data-act="reps"]'), '3');
+    await wait(10);
+    rowBy(doc, 'main:4').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    let e4 = await entryFor('main:4');
+    log('ticking after changing the reps keeps the typed reps', e4.status === 'ticked' && e4.reps === 3);
+    log('the row still shows the typed reps and marks the set as changed', rowBy(doc, 'main:4').querySelector('[data-act="reps"]').value === '3' && rowBy(doc, 'main:4').classList.contains('changed') && /Done, 3 reps/.test(rowBy(doc, 'main:4').textContent));
+    // reps typed but the field not yet blurred (no change event), then ticked
+    rowBy(doc, 'main:3').querySelector('[data-act="reps"]').value = '4';
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    log('reps still in the field when tapping the tick are used', (await entryFor('main:3')).reps === 4);
+    // an empty reps field ticks as planned
+    rowBy(doc, 'main:0').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    const e0 = await entryFor('main:0');
+    log('with the reps field empty, tick logs the planned reps', e0.status === 'ticked' && e0.reps === 5 && rowBy(doc, 'main:0').classList.contains('done') && rowBy(doc, 'main:0').querySelector('[data-act="reps"]').value === '');
+    // editing reps on a ticked set keeps it ticked
+    setValue(dom, rowBy(doc, 'main:0').querySelector('[data-act="reps"]'), '4');
+    await wait(30);
+    log('changing the reps of a ticked set keeps it ticked', (await entryFor('main:0')).status === 'ticked' && (await entryFor('main:0')).reps === 4 && rowBy(doc, 'main:0').querySelector('.tick.on'));
+    setValue(dom, rowBy(doc, 'main:0').querySelector('[data-act="reps"]'), '');
+    await wait(30);
+    log('clearing the reps of a ticked set goes back to the plan', (await entryFor('main:0')).reps === 5 && rowBy(doc, 'main:0').classList.contains('done'));
+    done(dom);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

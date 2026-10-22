@@ -1576,13 +1576,14 @@
   function repsDiffer(reps, planned){
     if(!/^\s*\d+\s*$/.test(String(planned.reps))) return false; // a range like "10-15": any count is fine
     var p = parseInt(planned.reps, 10);
-    return planned.amrap ? reps < p : reps !== p;
+    var r = Number(reps); // planned reps can be stored as a string ("10" for BBB)
+    return planned.amrap ? r < p : r !== p;
   }
   // logged, but not as planned: a different weight, or different reps
   function entryChanged(e, slot){
     if(!e || e.status==="skipped") return false;
     var p = slot.planned;
-    return (e.weight!=null && p.weight!=null && Math.abs(e.weight-p.weight)>EPS) || (e.status==="reps" && repsDiffer(e.reps, p));
+    return (e.weight!=null && p.weight!=null && Math.abs(e.weight-p.weight)>EPS) || ((e.status==="reps" || e.status==="ticked") && repsDiffer(e.reps, p));
   }
   function logRowHTML(slot, rec){
     var e = entryForSlot(rec, slot.key);
@@ -1592,9 +1593,11 @@
     var cls = "log-row" + (s.warmup ? " warmup" : "") + (status==="skipped" ? " skipped" : changed ? " changed" : status ? " done" : "");
     var draft = draftWeights[logDate+"|"+slot.key];
     var weight = e && e.weight!=null ? e.weight : draft!=null ? draft : slot.planned.weight;
-    var repsVal = e && status==="reps" ? e.reps : "";
+    // a ticked set can carry reps typed before the tick; show them unless they are the plan's
+    var tickedAsPlanned = status==="ticked" && String(e.reps)===String(slot.planned.reps);
+    var repsVal = e && (status==="reps" || (status==="ticked" && !tickedAsPlanned)) ? e.reps : "";
     var statusText = !e ? "" : (status==="skipped" ? "Skipped" :
-      (status==="ticked" ? "Done" : e.reps+" reps") + (e.weight!=null ? " @ "+fmtWeight(e.weight)+" "+e.unit : "")) + (e.note ? " · "+e.note : "");
+      (tickedAsPlanned ? "Done" : status==="ticked" ? "Done, "+e.reps+" reps" : e.reps+" reps") + (e.weight!=null ? " @ "+fmtWeight(e.weight)+" "+e.unit : "")) + (e.note ? " · "+e.note : "");
     var tick = (s.amrap && status!=="ticked") ? "" :
       '<button class="log-btn tick'+(status==="ticked"?" on":"")+'" data-act="tick" aria-label="Done as planned">✓</button>';
     var extras = "";
@@ -1794,8 +1797,10 @@
     if(!slot) return;
     var existing = entryForSlot(sessions[logDate], slot.key);
     if(act==="tick"){
+      // ticking keeps any reps typed in the row; only an empty field means "as planned"
+      var typed = parseNum(row.querySelector('[data-act="reps"]').value);
       if(existing && existing.status==="ticked") clearSlotEntry(slot);
-      else upsertSlotEntry(slot, {status:"ticked", reps:slot.planned.reps});
+      else upsertSlotEntry(slot, {status:"ticked", reps:typed===null ? slot.planned.reps : Math.max(0, Math.round(typed))});
     } else if(act==="more"){
       openExtras[slot.key] = !openExtras[slot.key];
     } else if(act==="skip"){
@@ -1857,7 +1862,9 @@
     var existing = entryForSlot(sessions[logDate], slot.key);
     if(act==="reps"){
       var reps = parseNum(t.value);
-      if(reps===null){ if(existing && existing.status==="reps") clearSlotEntry(slot); }
+      // on a ticked set, changing the reps keeps it ticked; clearing them goes back to the plan
+      if(existing && existing.status==="ticked") upsertSlotEntry(slot, {reps:reps===null ? slot.planned.reps : Math.max(0, Math.round(reps))});
+      else if(reps===null){ if(existing && existing.status==="reps") clearSlotEntry(slot); }
       else upsertSlotEntry(slot, {status:"reps", reps:Math.max(0, Math.round(reps))});
     } else if(act==="weight"){
       var w = parseNum(t.value);
