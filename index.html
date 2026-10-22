@@ -167,6 +167,9 @@
 
   footer.foot{margin-top:30px; padding-top:16px; border-top:1px solid var(--border); font-size:11.5px; color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
 
+  .dev-banner{background:var(--warn); color:#fff; font-family:var(--display); font-weight:600; letter-spacing:.12em; text-align:center; padding:3px 8px; font-size:12px;}
+  .dev-banner[hidden]{display:none;}
+
   @page{size:A4 landscape; margin:8mm;}
 </style>
 <!-- print layout. Kept as its own stylesheet so the page can briefly apply it on
@@ -174,7 +177,7 @@
      multiple of --ps, which that function sets so each week fills one page. -->
 <style id="printStyles" media="print">
   :root{--ps:1;}
-  .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
+  .dev-banner, .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
   body{background:#fff; color:#000; font-size:calc(var(--ps) * 10px);}
   .app{max-width:none; padding:0;}
   .shell{display:block; padding:0;}
@@ -226,6 +229,7 @@
 
 </style>
 
+<div class="dev-banner" id="devBanner" hidden>DEV: separate storage from the live site</div>
 <div class="app">
   <button class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="controls">☰ Settings</button>
   <div class="shell">
@@ -383,6 +387,12 @@
   var DEFAULT_PLATES_LBS = {45:2, 35:1, 25:2, 10:2, 5:2, 2.5:1};
 
   var EPS = 1e-6;
+
+  // the dev build is served from /531/dev/ (and localhost while developing). It
+  // shares the github.io origin with the live site, so it keeps its own storage
+  // and Drive folder and says so in a banner.
+  var IS_DEV = /\/dev\//.test(location.pathname) || location.hostname==="localhost" || location.hostname==="127.0.0.1";
+  var APP_TITLE = IS_DEV ? "[DEV] 531 Planner" : "531 Planner";
 
   // ---------------- state <-> URL encoding ----------------
   // the whole program lives in the URL's hash fragment (never sent to a server,
@@ -1013,7 +1023,7 @@
     document.getElementById("showPlatesCheck").checked = state.showPlates;
 
     document.getElementById("programTitle").value = state.programTitle;
-    document.title = state.programTitle ? "531 Planner - "+state.programTitle : "531 Planner";
+    document.title = state.programTitle ? APP_TITLE+" - "+state.programTitle : APP_TITLE;
 
     renderAccessoryEditor();
   }
@@ -1131,7 +1141,7 @@
 
   document.getElementById("programTitle").addEventListener("input", function(e){
     state.programTitle = e.target.value;
-    document.title = state.programTitle ? "531 Planner - "+state.programTitle : "531 Planner";
+    document.title = state.programTitle ? APP_TITLE+" - "+state.programTitle : APP_TITLE;
     saveState();
   });
 
@@ -1321,6 +1331,7 @@
   document.getElementById("printBtn").addEventListener("click", function(){ window.print(); });
 
   // ---------------- init ----------------
+  if(IS_DEV) document.getElementById("devBanner").hidden = false;
   // our own writes use history.replaceState, which never fires hashchange, so this
   // only fires on an actual navigation — e.g. pasting a different shared link into
   // this same tab, or using back/forward — and is safe from feedback loops

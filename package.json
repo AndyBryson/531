@@ -5,9 +5,10 @@
   "description": "5/3/1 training-max calculator: TM calculator, programme templates, plate-loading optimiser, printable output.",
   "main": "index.html",
   "scripts": {
-    "test": "node test/dom-test.js"
+    "test": "node test/dom-test.js && node test/logging-test.js"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.6",
     "jsdom": "^30.1.0"
   }
 }

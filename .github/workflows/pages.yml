@@ -1,0 +1,48 @@
+# Publishes main at /531/ and dev at /531/dev/ in one Pages deployment.
+# Runs from whichever branch was pushed, but always checks out both, so a push
+# to either branch republishes the whole site. No build step: files are copied.
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: dev
+      - name: Assemble site
+        run: |
+          EXCLUDES="--exclude=.git --exclude=.github --exclude=test --exclude=docs --exclude=node_modules --exclude=package.json --exclude=package-lock.json"
+          mkdir -p _site/dev
+          rsync -a $EXCLUDES main/ _site/
+          rsync -a $EXCLUDES dev/ _site/dev/
+          touch _site/.nojekyll
+          find _site -type f | sort
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
