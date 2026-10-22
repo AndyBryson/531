@@ -12,7 +12,7 @@
 
 ## Architecture
 
-- `index.html` is the whole app: markup, CSS and one IIFE script. No build step, no runtime dependencies, no framework. Google Fonts is the only external request.
+- `index.html` is the whole app: markup, CSS and one IIFE script. No build step, no runtime dependencies, no framework. Alongside it: `sw.js` (service worker, offline copy), `manifest.webmanifest` / `manifest-dev.webmanifest` and `icons/`. Google Fonts is the only external request until Drive sync is linked.
 - JS style is ES5: `var`, `function`, `"use strict"`, string-built HTML via `*HTML()` helpers, then `render()`. Match it.
 - State: one `state` object (`defaultState()`), serialised as base64url JSON into the URL hash (`#s=...`) by `saveState()` with `history.replaceState`, debounced 250 ms. `loadState()` shallow-merges onto defaults so old links survive new fields. Any new state field needs a default and, if nested, a merge line in `loadState()`.
 - Persistence: IndexedDB (`openStore()`, memory fallback) holds the programme (`meta` key `programme`) and one session record per date (`sessions` store). The URL hash is still the share link and wins over the stored programme on load. Dev (`IS_DEV`: path has `/dev/` or localhost) uses database `531-planner-dev`.

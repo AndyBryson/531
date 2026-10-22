@@ -1,6 +1,10 @@
 <meta charset="utf-8">
 <title>531 Planner</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#95661A" id="themeColor">
+<link rel="manifest" href="manifest.webmanifest" id="manifestLink">
+<link rel="icon" href="icons/icon-192.png" id="iconLink">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -2050,7 +2054,27 @@
   document.getElementById("printBtn").addEventListener("click", function(){ window.print(); });
 
   // ---------------- init ----------------
-  if(IS_DEV) document.getElementById("devBanner").hidden = false;
+  if(IS_DEV){
+    document.getElementById("devBanner").hidden = false;
+    // installs as a separate "531 DEV" app with its own icon
+    document.getElementById("manifestLink").href = "manifest-dev.webmanifest";
+    document.getElementById("iconLink").href = "icons/icon-dev-192.png";
+    document.getElementById("themeColor").content = "#AA4A22";
+  }
+
+  // ---------------- installable app ----------------
+  // the service worker keeps the app loadable offline; it registers at this
+  // page's folder, so /531/ and /531/dev/ each get their own
+  function requestPersistentStorage(){
+    if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(noop);
+  }
+  if("serviceWorker" in navigator && (location.protocol==="https:" || IS_DEV)){
+    window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(noop); });
+  }
+  // ask the browser not to clear the log under storage pressure once the app is
+  // installed (Chrome grants this to installed apps without a prompt)
+  window.addEventListener("appinstalled", requestPersistentStorage);
+  if(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) requestPersistentStorage();
   // our own writes use history.replaceState, which never fires hashchange, so this
   // only fires on an actual navigation — e.g. pasting a different shared link into
   // this same tab, or using back/forward — and is safe from feedback loops

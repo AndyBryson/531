@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
 const { IDBFactory, IDBKeyRange } = require('fake-indexeddb');
+const vm = require('vm');
 
 const bodyContent = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const wrapped = `<!doctype html><html><head><meta charset="utf-8"></head><body>${bodyContent}</body></html>`;
@@ -28,6 +29,7 @@ function load(opts) {
       window.confirm = opts.confirm || (() => true);
       window.navigator.clipboard = { writeText: () => Promise.resolve() };
       window.addEventListener('error', e => errors.push(String(e.message)));
+      if (opts.beforeParse) opts.beforeParse(window);
     },
   });
   dom.errors = errors;
@@ -297,6 +299,64 @@ function mondayOf(iso) { const [y, m, d] = iso.split('-').map(Number); const dt 
     await wait(150);
     log('replay with nothing logged says so', /Nothing logged yet/.test(empty.doc.getElementById('replayView').textContent));
     done(empty);
+  }
+
+
+  // ---------------- step 5: installable app ----------------
+  {
+    const root = path.join(__dirname, '..');
+    const prodManifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+    const devManifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest-dev.webmanifest'), 'utf8'));
+    log('manifest starts the installed app on the log view, standalone', prodManifest.start_url === './#v=log' && prodManifest.display === 'standalone' && prodManifest.scope === './');
+    log('manifest icons exist (192 and 512)', prodManifest.icons.length === 2 && prodManifest.icons.every(i => fs.existsSync(path.join(root, i.src))));
+    log('dev manifest has its own name and icons', devManifest.short_name === '531 DEV' && devManifest.icons.every(i => /dev/.test(i.src) && fs.existsSync(path.join(root, i.src))));
+
+    const fakeNav = (calls, persisted) => window => {
+      Object.defineProperty(window.navigator, 'serviceWorker', { configurable: true, value: { register: u => { calls.push(u); return Promise.resolve({}); } } });
+      Object.defineProperty(window.navigator, 'storage', { configurable: true, value: { persist: () => { persisted.push(true); return Promise.resolve(true); } } });
+    };
+    const calls = [], persisted = [];
+    const prod = load({ url: 'https://andybryson.github.io/531/', beforeParse: fakeNav(calls, persisted) });
+    await wait(100);
+    log('service worker registered from the page\'s folder (sw.js)', calls.length === 1 && calls[0] === 'sw.js');
+    log('prod page links the prod manifest', prod.doc.getElementById('manifestLink').getAttribute('href') === 'manifest.webmanifest');
+    log('not installed: no persistent storage request on load', persisted.length === 0);
+    prod.window.dispatchEvent(new prod.window.Event('appinstalled'));
+    log('after install, persistent storage is requested', persisted.length === 1);
+    done(prod);
+
+    const dev = load({ url: 'https://andybryson.github.io/531/dev/', beforeParse: fakeNav([], []) });
+    await wait(100);
+    log('dev page links the dev manifest and icon', dev.doc.getElementById('manifestLink').getAttribute('href') === 'manifest-dev.webmanifest' && /dev/.test(dev.doc.getElementById('iconLink').getAttribute('href')));
+    done(dev);
+
+    const standalonePersist = [];
+    const app = load({ url: 'https://andybryson.github.io/531/', beforeParse: w => { fakeNav([], standalonePersist)(w); w.matchMedia = q => ({ matches: /standalone/.test(q) }); } });
+    await wait(100);
+    log('opened as the installed app: persistent storage is requested', standalonePersist.length === 1);
+    done(app);
+
+    // the service worker's routing, run in a sandbox with a fake worker scope
+    function swRoutes(scope) {
+      const handlers = {};
+      const sandbox = { self: { registration: { scope }, addEventListener: (t, f) => { handlers[t] = f; }, clients: { claim() {} }, skipWaiting() {} },
+        caches: { open: () => Promise.resolve({ match: () => Promise.resolve(null), put() {}, addAll: () => Promise.resolve() }) },
+        fetch: () => Promise.resolve({ ok: true, clone() { return this; } }), URL, Promise, setTimeout };
+      vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
+      return (url, mode) => {
+        let handled = false;
+        handlers.fetch({ request: { url, method: 'GET', mode: mode || 'no-cors' }, respondWith: p => { handled = true; if (p && p.catch) p.catch(() => {}); } });
+        return handled;
+      };
+    }
+    const prodSw = swRoutes('https://andybryson.github.io/531/');
+    log('prod worker handles the prod page', prodSw('https://andybryson.github.io/531/', 'navigate') === true);
+    log('prod worker ignores everything under /531/dev/', prodSw('https://andybryson.github.io/531/dev/', 'navigate') === false && prodSw('https://andybryson.github.io/531/dev/sw.js') === false);
+    log('prod worker leaves Google sign-in and Drive to the network', prodSw('https://accounts.google.com/gsi/client') === false && prodSw('https://www.googleapis.com/drive/v3/files') === false);
+    log('fonts are served cache-first for offline use', prodSw('https://fonts.gstatic.com/s/oswald.woff2') === true);
+    const devSw = swRoutes('https://andybryson.github.io/531/dev/');
+    log('dev worker handles the dev page', devSw('https://andybryson.github.io/531/dev/', 'navigate') === true && devSw('https://andybryson.github.io/531/dev/icons/icon-dev-192.png') === true);
+    log('dev worker does not handle the prod page', devSw('https://andybryson.github.io/531/', 'navigate') === false);
   }
 
   console.log('\nFINAL total runtime errors:', totalErrors);

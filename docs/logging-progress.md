@@ -20,8 +20,15 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Replay tab: a select of calendar weeks (Monday to Sunday) that have logged sets, newest first. Each programme week found in that calendar week is drawn from the latest session's `programme.state` snapshot via `withState()`, which swaps the global `state` while the planner's own generation code runs.
 - Each planned set shows its result: done (green), changed (amber, different weight or reps), missed or skipped (red). Comments show under the set. Ad hoc work is listed under its day as "<name> (extra)". Days with no session show the plan only, dimmed. Sessions for a day that no longer exists in the snapshot are listed as plain cards.
 
+### Step 5: installable app
+- `manifest.webmanifest` (prod) and `manifest-dev.webmanifest` (dev: "531 DEV", red icon). The page links the prod one; on dev, JS swaps the link, icon and theme colour. `start_url` is `./#v=log`, so the installed app opens on the Log tab.
+- `icons/`: 192 and 512 PNGs (barbell, full-bleed so they work as maskable), prod and dev colours. Drawn by a throwaway Python script; plain PNGs, no source to maintain.
+- `sw.js`: registered as `sw.js` from the page, so scope is the page's folder. Page requests are network first with a 3 s fallback to the cached copy; icons, manifests and Google Fonts are cache first, refreshed in the background. Ignores anything under `<scope>dev/` (prod worker vs dev site), non-GET, and other origins except Google Fonts. Cache names include the scope so prod and dev do not share.
+- `navigator.storage.persist()` on `appinstalled` and when opened in standalone mode.
+- Checked in headless Chrome on localhost: worker installs and controls the page, shell cached, and an offline reload still renders the Log view. (The in-app preview browser cannot register service workers, so it was not used for this.)
+
 ## Next
-- Step 5: manifest, service worker, `navigator.storage.persist()`.
+- Step 4: Google link and Drive sync.
 
 ## Decisions the plan did not cover
 - The workflow file lives on `dev` only until `dev` is merged into `main`. Until then a push to `main` does not redeploy; a push to `dev` (or running the workflow by hand on `dev`) republishes both. Merging dev into main fixes this.
