@@ -19,7 +19,7 @@ let totalErrors = 0;
 function load(opts) {
   opts = opts || {};
   const errors = [];
-  const dom = new JSDOM(wrapped, {
+  const dom = new JSDOM(opts.transform ? opts.transform(wrapped) : wrapped, {
     runScripts: 'dangerously',
     url: opts.url || 'https://andybryson.github.io/531/',
     pretendToBeVisual: true,
@@ -89,6 +89,89 @@ function idbPut(factory, dbName, storeName, records, key) {
 }
 function daysFrom(iso, n) { const [y, m, d] = iso.split('-').map(Number); return isoDate(new Date(y, m - 1, d + n)); }
 function mondayOf(iso) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d); return daysFrom(iso, -((dt.getDay() + 6) % 7)); }
+
+// An in-memory Google Drive with the same interface as the app's REST client.
+// Every write gets a later modifiedTime, like the real thing.
+class FakeDrive {
+  constructor() { this.files = {}; this.n = 0; this.calls = []; this.failNext = 0; }
+  _id() { return 'f' + (++this.n); }
+  _time() { this.clock = Math.max(Date.now(), (this.clock || 0) + 1); return new Date(this.clock).toISOString(); }
+  _maybeFail(op) { this.calls.push(op); if (this.failNext > 0) { this.failNext--; return Promise.reject(Object.assign(new Error('Drive error 500'), { status: 500 })); } return null; }
+  _meta(f) { return { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime }; }
+  findFolder(name, tag) {
+    return this._maybeFail('findFolder') || Promise.resolve(Object.values(this.files)
+      .filter(f => f.name === name && f.mimeType === 'application/vnd.google-apps.folder' && (f.appProperties || {}).app === tag)
+      .map(f => this._meta(f))[0] || null);
+  }
+  createFolder(name, parentId, props) {
+    const f = { id: this._id(), name, mimeType: 'application/vnd.google-apps.folder', parents: parentId ? [parentId] : [], appProperties: props || {}, modifiedTime: this._time() };
+    this.files[f.id] = f;
+    return this._maybeFail('createFolder') || Promise.resolve(this._meta(f));
+  }
+  rename(id, name, props) { const f = this.files[id]; f.name = name; f.appProperties = props || {}; f.modifiedTime = this._time(); return this._maybeFail('rename') || Promise.resolve(this._meta(f)); }
+  list(folderId) { return this._maybeFail('list') || Promise.resolve(Object.values(this.files).filter(f => f.parents.includes(folderId)).map(f => this._meta(f))); }
+  read(id) { return this._maybeFail('read') || Promise.resolve(JSON.parse(this.files[id].content)); }
+  create(parentId, name, data) {
+    return this._maybeFail('create') || (() => {
+      const f = { id: this._id(), name, mimeType: 'application/json', parents: [parentId], content: JSON.stringify(data), modifiedTime: this._time() };
+      this.files[f.id] = f; return Promise.resolve(this._meta(f));
+    })();
+  }
+  update(id, data) {
+    return this._maybeFail('update') || (() => {
+      const f = this.files[id]; f.content = JSON.stringify(data); f.modifiedTime = this._time(); return Promise.resolve(this._meta(f));
+    })();
+  }
+  // test helpers
+  byName(name, parentName) {
+    const parent = parentName && Object.values(this.files).find(f => f.name === parentName);
+    return Object.values(this.files).find(f => f.name === name && (!parent || f.parents.includes(parent.id)));
+  }
+  json(name, parentName) { const f = this.byName(name, parentName); return f && JSON.parse(f.content); }
+}
+function fakeAuth(signedIn) {
+  const a = { signedIn: !!signedIn, signIns: 0,
+    hasToken: () => a.signedIn, token: () => (a.signedIn ? 'tok' : null),
+    signIn: () => { a.signIns++; a.signedIn = true; return Promise.resolve('tok'); },
+    clear: () => { a.signedIn = false; } };
+  return a;
+}
+function makeFakeDriveFetch() {
+  const reqs = [];
+  const files = {}; let n = 0;
+  const res = (status, body) => Promise.resolve({ ok: status < 300, status, json: () => Promise.resolve(body) });
+  const fakeFetch = (url, opts) => {
+    opts = opts || {};
+    const u = new URL(url);
+    reqs.push({ method: opts.method || 'GET', url: u, headers: opts.headers || {}, body: opts.body });
+    const meta = f => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime });
+    const now = () => new Date(Date.now() + (++n)).toISOString();
+    if (u.pathname === '/drive/v3/files' && (opts.method || 'GET') === 'GET') {
+      const q = u.searchParams.get('q');
+      const parent = /^'([^']+)' in parents/.exec(q);
+      const list = Object.values(files).filter(f => parent ? f.parents.includes(parent[1]) : (q.includes("name='" + f.name + "'") && q.includes("value='" + (f.appProperties || {}).app + "'")));
+      return res(200, { files: list.map(meta) });
+    }
+    if (u.pathname === '/drive/v3/files' && opts.method === 'POST') {
+      const b = JSON.parse(opts.body); const f = Object.assign({ id: 'id' + (++n), parents: b.parents || [], modifiedTime: now() }, b);
+      files[f.id] = f; return res(200, meta(f));
+    }
+    if (u.pathname === '/upload/drive/v3/files' && opts.method === 'POST') {
+      const boundary = /boundary=(.+)$/.exec(opts.headers['Content-Type'])[1];
+      const parts = opts.body.split('--' + boundary).slice(1, 3).map(p => p.slice(p.indexOf('\r\n\r\n') + 4).replace(/\r\n$/, ''));
+      const m = JSON.parse(parts[0]);
+      const f = { id: 'id' + (++n), name: m.name, parents: m.parents, mimeType: m.mimeType, content: parts[1], modifiedTime: now() };
+      files[f.id] = f; return res(200, meta(f));
+    }
+    const upd = /^\/upload\/drive\/v3\/files\/(.+)$/.exec(u.pathname);
+    if (upd && opts.method === 'PATCH') { const f = files[upd[1]]; f.content = opts.body; f.modifiedTime = now(); return res(200, meta(f)); }
+    const get = /^\/drive\/v3\/files\/(.+)$/.exec(u.pathname);
+    if (get && u.searchParams.get('alt') === 'media') return res(200, JSON.parse(files[get[1]].content));
+    return res(404, {});
+  };
+  return { fetch: fakeFetch, reqs, files };
+}
+const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + act + '"]');
 
 (async () => {
   // ---------------- step 1: dev detection ----------------
@@ -357,6 +440,226 @@ function mondayOf(iso) { const [y, m, d] = iso.split('-').map(Number); const dt 
     const devSw = swRoutes('https://andybryson.github.io/531/dev/');
     log('dev worker handles the dev page', devSw('https://andybryson.github.io/531/dev/', 'navigate') === true && devSw('https://andybryson.github.io/531/dev/icons/icon-dev-192.png') === true);
     log('dev worker does not handle the prod page', devSw('https://andybryson.github.io/531/', 'navigate') === false);
+  }
+
+
+  // ---------------- step 4: Google link and Drive sync ----------------
+  {
+    // no client ID and no fakes: the page works, sync is off, nothing from Google loads
+    const plain = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory() });
+    await wait(150);
+    log('without a client ID, Link is disabled and says why', plain.doc.querySelector('#googleBody button').disabled && /GOOGLE_CLIENT_ID/.test(plain.doc.getElementById('googleBody').textContent));
+    log('sync pill says Local only when not linked', plain.doc.getElementById('syncPill').textContent === 'Local only');
+    log('Google script is not loaded unless Drive is used', !plain.doc.querySelector('script[src*="accounts.google.com"]'));
+    done(plain);
+
+    const gdrive = new FakeDrive();
+    const idbA = new IDBFactory(), idbB = new IDBFactory();
+    const fakesFor = (auth) => ({ drive: gdrive, auth, syncDelayMs: 30 });
+
+    // device A (laptop): plan a programme and log a set, then link to an empty Drive
+    const authA = fakeAuth(false);
+    let A = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idbA, fakes: fakesFor(authA) });
+    await wait(150);
+    rowBy(A.doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(50);
+    A.doc.querySelector('#viewTabs [data-view="plan"]').click();
+    setValue(A, A.doc.getElementById('programTitle'), 'Cycle 5', 'input');
+    await wait(350);
+    log('with Google configured, Link to Google is offered', !!driveBtn(A.doc, 'link') && !driveBtn(A.doc, 'link').disabled);
+    driveBtn(A.doc, 'link').click();
+    await wait(150);
+    const folder = gdrive.byName('531 Planner');
+    log('linking signs in and creates the "531 Planner" folder, tagged', authA.signIns === 1 && !!folder && folder.appProperties.app === '531-planner');
+    log('a sessions subfolder is created inside it', !!gdrive.byName('sessions', '531 Planner'));
+    const progJson = gdrive.json('programme.json', '531 Planner');
+    log('programme.json holds the current planner state', !!progJson && progJson.programTitle === 'Cycle 5' && progJson.template === 'bbb');
+    const sessA = gdrive.json(TODAY + '.json', 'sessions');
+    log('today\'s session is uploaded as sessions/<date>.json', !!sessA && sessA.date === TODAY && sessA.entries.length === 1 && sessA.entries[0].status === 'ticked');
+    log('the Drive copy leaves out the local rev counter', sessA && !('rev' in sessA));
+    log('pill shows Synced', A.doc.getElementById('syncPill').textContent === 'Synced' && A.doc.getElementById('syncPill').classList.contains('ok'));
+    log('settings show Sync now and Unlink once linked', !!driveBtn(A.doc, 'sync') && !!driveBtn(A.doc, 'unlink'));
+
+    // a further set on A is pushed after the debounce
+    A.doc.querySelector('#viewTabs [data-view="log"]').click();
+    await wait(20);
+    setValue(A, rowBy(A.doc, 'main:4').querySelector('[data-act="reps"]'), '4');
+    await wait(5);
+    log('a new set marks sync as pending', A.doc.getElementById('syncPill').textContent === 'Pending');
+    await wait(120);
+    log('the change is pushed after a short delay', gdrive.json(TODAY + '.json', 'sessions').entries.length === 2 && A.doc.getElementById('syncPill').textContent === 'Synced');
+
+    // device B (phone): fresh, links and finds A's folder
+    const authB = fakeAuth(false);
+    let B = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idbB, fakes: fakesFor(authB) });
+    await wait(150);
+    driveBtn(B.doc, 'link').click();
+    await wait(80);
+    log('linking a second device finds the folder and asks: load or start from scratch', !!driveBtn(B.doc, 'load') && !!driveBtn(B.doc, 'scratch') && /choose/i.test(B.doc.getElementById('syncPill').textContent));
+    driveBtn(B.doc, 'load').click();
+    await wait(200);
+    log('Load from Drive takes the programme from Drive', B.doc.getElementById('programTitle').value === 'Cycle 5');
+    log('Load from Drive brings in the logged sessions', rowBy(B.doc, 'main:3').classList.contains('done') && rowBy(B.doc, 'main:4').classList.contains('changed'));
+    log('no duplicate folder was created', Object.values(gdrive.files).filter(f => f.name === '531 Planner').length === 1);
+
+    // both devices log different sets on the same day; B also unticks A's set
+    setValue(B, rowBy(B.doc, 'main:5').querySelector('[data-act="reps"]'), '7');
+    rowBy(B.doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(150);
+    rowBy(A.doc, 'main:6').querySelector('[data-act="tick"]').click();
+    await wait(150);
+    const merged = gdrive.json(TODAY + '.json', 'sessions');
+    const live = merged.entries.filter(e => !e.deleted).map(e => e.planned.key).sort();
+    log('sets logged on both devices are merged by id', JSON.stringify(live) === '["main:4","main:5","main:6"]');
+    log('a set unticked on one device stays unticked after merging (tombstone)', merged.entries.some(e => e.planned.key === 'main:3' && e.deleted));
+    // A pulls when it becomes visible
+    A.window.document.dispatchEvent(new A.window.Event('visibilitychange'));
+    await wait(150);
+    log('device A shows B\'s set after pulling', rowBy(A.doc, 'main:5').classList.contains('done') && !rowBy(A.doc, 'main:3').classList.contains('done'));
+
+    // programme: last write wins
+    B.doc.querySelector('#viewTabs [data-view="plan"]').click();
+    setValue(B, B.doc.getElementById('programTitle'), 'Cycle 5 (phone edit)', 'input');
+    await wait(450);
+    log('programme edit on B is pushed to programme.json', gdrive.json('programme.json', '531 Planner').programTitle === 'Cycle 5 (phone edit)');
+    A.window.document.dispatchEvent(new A.window.Event('visibilitychange'));
+    await wait(150);
+    log('A takes the newer programme from Drive', A.doc.getElementById('programTitle').value === 'Cycle 5 (phone edit)');
+    done(B);
+
+    // reload of A with no token: sync waits for a tap
+    done(A);
+    const authA2 = fakeAuth(false);
+    A = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idbA, fakes: fakesFor(authA2) });
+    await wait(150);
+    log('after a reload with no token, the pill asks for a tap instead of popping sign-in', A.doc.getElementById('syncPill').textContent === 'Tap to sync' && authA2.signIns === 0);
+    A.doc.getElementById('syncPill').click();
+    await wait(150);
+    log('tapping the pill signs in and syncs', authA2.signIns === 1 && A.doc.getElementById('syncPill').textContent === 'Synced');
+
+    // Finish session pushes straight away
+    rowBy(A.doc, 'main:7').querySelector('[data-act="tick"]').click();
+    A.doc.getElementById('finishBtn').click();
+    await wait(30);
+    log('Finish session pushes without waiting for the delay', gdrive.json(TODAY + '.json', 'sessions').entries.some(e => e.planned && e.planned.key === 'main:7' && !e.deleted));
+
+    // failure and retry
+    gdrive.failNext = 1;
+    rowBy(A.doc, 'main:8').querySelector('[data-act="tick"]').click();
+    await wait(120);
+    log('a Drive error shows Sync failed with a retry', /failed/.test(A.doc.getElementById('syncPill').textContent) && A.doc.getElementById('syncPill').classList.contains('bad'));
+    log('the set is still logged locally despite the failure', rowBy(A.doc, 'main:8').classList.contains('done'));
+    A.doc.getElementById('syncPill').click();
+    await wait(120);
+    log('retry pushes the queued set', A.doc.getElementById('syncPill').textContent === 'Synced' && gdrive.json(TODAY + '.json', 'sessions').entries.some(e => e.planned && e.planned.key === 'main:8'));
+    done(A);
+
+    // share link while linked: asks before overwriting
+    const other = { programTitle: 'Shared by a friend', template: 'fsl' };
+    const shareHash = '#s=' + Buffer.from(JSON.stringify(other)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    let asked = 0;
+    const declined = load({ url: 'https://andybryson.github.io/531/' + shareHash, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => { asked++; return false; } });
+    await wait(250);
+    log('opening a share link while linked asks first', asked === 1);
+    log('declining keeps the saved programme', declined.doc.getElementById('programTitle').value === 'Cycle 5 (phone edit)' && gdrive.json('programme.json', '531 Planner').programTitle === 'Cycle 5 (phone edit)');
+    done(declined);
+    const accepted = load({ url: 'https://andybryson.github.io/531/' + shareHash, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => true });
+    await wait(500);
+    log('accepting uses the link and pushes it to programme.json', accepted.doc.getElementById('programTitle').value === 'Shared by a friend' && gdrive.json('programme.json', '531 Planner').programTitle === 'Shared by a friend');
+    done(accepted);
+
+    // device C: start from scratch keeps the old folder, renamed
+    const C = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory(), fakes: fakesFor(fakeAuth(false)) });
+    await wait(150);
+    driveBtn(C.doc, 'link').click();
+    await wait(60);
+    driveBtn(C.doc, 'scratch').click();
+    await wait(200);
+    const folders = Object.values(gdrive.files).filter(f => /^531 Planner/.test(f.name) && f.mimeType.includes('folder'));
+    log('start from scratch renames the old folder with a date suffix', folders.some(f => f.name === '531 Planner (old ' + TODAY + ')' && f.appProperties.app !== '531-planner'));
+    log('and creates a fresh folder from this device', folders.filter(f => f.name === '531 Planner' && f.appProperties.app === '531-planner').length === 1);
+    const fresh = await gdrive.findFolder('531 Planner', '531-planner');
+    const freshProg = JSON.parse(Object.values(gdrive.files).find(f => f.name === 'programme.json' && f.parents.includes(fresh.id)).content);
+    log('the fresh folder holds this device\'s programme', freshProg.programTitle === '');
+    driveBtn(C.doc, 'unlink').click();
+    await wait(30);
+    log('unlink returns to local only', C.doc.getElementById('syncPill').textContent === 'Local only' && !!driveBtn(C.doc, 'link'));
+    done(C);
+
+    // dev build keeps its own Drive folder
+    const devDrive = new FakeDrive();
+    const D = load({ url: 'https://andybryson.github.io/531/dev/', idb: new IDBFactory(), fakes: { drive: devDrive, auth: fakeAuth(false), syncDelayMs: 30 } });
+    await wait(150);
+    driveBtn(D.doc, 'link').click();
+    await wait(150);
+    log('dev links to its own "531 Planner (dev)" folder', !!devDrive.byName('531 Planner (dev)') && devDrive.byName('531 Planner (dev)').appProperties.app === '531-planner-dev' && !devDrive.byName('531 Planner'));
+    done(D);
+  }
+
+
+  // the real Drive REST client, driven against a fake fetch that speaks enough of Drive v3
+  {
+    const { fetch: fakeFetch, reqs, files } = makeFakeDriveFetch();
+    const R = load({ url: 'https://andybryson.github.io/531/#v=log', idb: new IDBFactory(), fakes: { auth: fakeAuth(false), syncDelayMs: 30 },
+      beforeParse: w => { w.fetch = fakeFetch; } });
+    await wait(150);
+    rowBy(R.doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(20);
+    driveBtn(R.doc, 'link').click();
+    await wait(200);
+    log('REST: every request carries the bearer token', reqs.length > 0 && reqs.every(r => r.headers.Authorization === 'Bearer tok'));
+    const find = reqs[0];
+    log('REST: folder lookup searches by name, folder type and app tag', find.method === 'GET' && /name='531 Planner'/.test(find.url.searchParams.get('q')) && /appProperties has \{ key='app' and value='531-planner' \}/.test(find.url.searchParams.get('q')) && /trashed=false/.test(find.url.searchParams.get('q')));
+    const mk = reqs.filter(r => r.method === 'POST' && r.url.pathname === '/drive/v3/files');
+    log('REST: creates the folder (tagged) and the sessions subfolder', mk.length === 2 && JSON.parse(mk[0].body).appProperties.app === '531-planner' && JSON.parse(mk[1].body).name === 'sessions');
+    const up = reqs.filter(r => r.url.pathname === '/upload/drive/v3/files' && r.url.searchParams.get('uploadType') === 'multipart');
+    log('REST: programme.json and the session are created with multipart uploads', up.length === 2 && /programme\.json/.test(up[0].body) && new RegExp(TODAY + '\\.json').test(up[1].body));
+    const sessFile = Object.values(files).find(f => f.name === TODAY + '.json');
+    log('REST: uploaded session content round-trips as JSON', !!sessFile && JSON.parse(sessFile.content).entries.length === 1);
+    rowBy(R.doc, 'main:4').querySelector('[data-act="tick"]').click();
+    await wait(150);
+    const patch = reqs.filter(r => r.method === 'PATCH' && r.url.searchParams.get('uploadType') === 'media');
+    log('REST: a later change updates the file in place (PATCH, uploadType=media)', patch.length === 1 && JSON.parse(sessFile.content).entries.length === 2);
+    log('REST: pill shows Synced', R.doc.getElementById('syncPill').textContent === 'Synced');
+    done(R);
+  }
+
+
+  // the real Google Identity Services wrapper, with a fake GIS library and a test client ID
+  {
+    const { fetch: gfetch, reqs } = makeFakeDriveFetch();
+    let tokenConfig = null, requested = [], closePopup = false;
+    const fakeGoogle = { accounts: { oauth2: { initTokenClient: cfg => {
+      tokenConfig = cfg;
+      return { requestAccessToken: o => { requested.push(o); setTimeout(() => closePopup ? cfg.error_callback({ type: 'popup_closed' }) : cfg.callback({ access_token: 'gis-token', expires_in: 3599 }), 5); } };
+    } } } };
+    const G = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory(),
+      transform: html => html.replace('var GOOGLE_CLIENT_ID = "";', 'var GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";'),
+      beforeParse: w => {
+        w.fetch = gfetch;
+        // jsdom does not fetch external scripts: stand in for the GIS script loading
+        new w.MutationObserver(muts => muts.forEach(m => m.addedNodes.forEach(nd => {
+          if (nd.tagName === 'SCRIPT' && /accounts\.google\.com\/gsi\/client/.test(nd.src)) { w.google = fakeGoogle; setTimeout(() => nd.onload(), 5); }
+        }))).observe(w.document, { childList: true, subtree: true });
+      } });
+    await wait(150);
+    log('GIS: with a client ID set, Link to Google is enabled', !driveBtn(G.doc, 'link').disabled);
+    log('GIS: the Google script is not loaded before linking', !G.doc.querySelector('script[src*="gsi/client"]'));
+    closePopup = true;
+    driveBtn(G.doc, 'link').click();
+    await wait(80);
+    log('GIS: closing the sign-in popup reports it and does not link', /Sign-in window closed/.test(G.doc.getElementById('googleBody').textContent) && !!driveBtn(G.doc, 'link'));
+    closePopup = false;
+    driveBtn(G.doc, 'link').click();
+    await wait(200);
+    log('GIS: token client uses the client ID and the drive.file scope', tokenConfig.client_id === 'test-client.apps.googleusercontent.com' && tokenConfig.scope === 'https://www.googleapis.com/auth/drive.file');
+    log('GIS: the Google script is loaded once, on demand', G.doc.querySelectorAll('script[src="https://accounts.google.com/gsi/client"]').length === 1);
+    log('GIS: access token requested with prompt ""', requested.length === 2 && requested[1].prompt === '');
+    log('GIS: Drive requests use the token Google returned', reqs.length > 0 && reqs.every(r => r.headers.Authorization === 'Bearer gis-token'));
+    const kept = JSON.parse(G.window.sessionStorage.getItem('531-planner-token'));
+    log('GIS: token kept for this tab only (sessionStorage), with its expiry', kept.token === 'gis-token' && kept.expires > Date.now() + 3500 * 1000);
+    log('GIS: linked and synced', G.doc.getElementById('syncPill').textContent === 'Synced');
+    done(G);
   }
 
   console.log('\nFINAL total runtime errors:', totalErrors);

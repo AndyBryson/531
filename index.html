@@ -48,6 +48,7 @@
     padding:8px 14px; font-weight:600; color:var(--text);
   }
   .btn:hover{border-color:var(--accent);}
+  .btn:disabled{opacity:.5; cursor:default; border-color:var(--border);}
   .btn.primary{background:var(--accent); color:var(--accent-contrast); border-color:var(--accent);}
 
   .shell{display:grid; grid-template-columns:320px 1fr; gap:18px; padding-block:18px 60px; align-items:start;}
@@ -184,7 +185,10 @@
   .sync-pill{font-size:12px; color:var(--text-dim); border:1px solid var(--border); border-radius:20px; padding:5px 12px; background:var(--surface);}
   .sync-pill.ok{color:var(--good); border-color:var(--good);}
   .sync-pill.bad{color:var(--warn); border-color:var(--warn);}
-  button.sync-pill{cursor:pointer;}
+  button.sync-pill{cursor:pointer; font-family:var(--sans);}
+  button.sync-pill:disabled{cursor:default;}
+  .drive-btns{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;}
+  .drive-err{color:var(--warn);}
   @media screen{
     body[data-view="log"] .shell, body[data-view="replay"] .shell,
     body[data-view="log"] .menu-toggle, body[data-view="replay"] .menu-toggle{display:none !important;}
@@ -314,7 +318,7 @@
       <button data-view="log">Log</button>
       <button data-view="replay">Replay</button>
     </div>
-    <span class="sync-pill" id="syncPill">Local only</span>
+    <button class="sync-pill" id="syncPill" disabled>Local only</button>
   </nav>
   <button class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="controls">☰ Settings</button>
   <div class="shell">
@@ -397,6 +401,11 @@
           <label>Show plate loading</label>
           <input type="checkbox" id="showPlatesCheck" checked>
         </div>
+      </section>
+
+      <section class="ctrl-group" id="googleGroup">
+        <h2>Google Drive</h2>
+        <div id="googleBody"></div>
       </section>
 
     </aside>
@@ -1407,6 +1416,7 @@
   var store = null, storeReady = false;
   var sessions = {};            // date -> session record, the in-memory copy of the store
   var savedProgrammeJSON = null; // last programme state written to the store
+  var programmeModified = null;  // when this device last changed it (ISO)
 
   // the programme is saved alongside the sessions so the installed app, which
   // opens without a share link in the URL, still has it
@@ -1415,16 +1425,14 @@
     var json = JSON.stringify(state);
     if(json===savedProgrammeJSON) return;
     savedProgrammeJSON = json;
-    store.setMeta("programme", {state:JSON.parse(json), modified:nowISO()}).catch(noop);
+    programmeModified = nowISO();
+    store.setMeta("programme", {state:JSON.parse(json), modified:programmeModified}).catch(noop);
     onProgrammeChanged();
   }
   function persistSession(rec){
     if(store) store.putSession(rec).catch(noop);
     onSessionChanged(rec.date);
   }
-  // hooks for Drive sync (step 4); no-ops until then
-  function onProgrammeChanged(){}
-  function onSessionChanged(){}
 
   // ---------------- sessions ----------------
   function nowISO(){ return new Date().toISOString(); }
@@ -1806,7 +1814,6 @@
     onSessionFinished();
     setTimeout(function(){ msg.textContent = ""; }, 3000);
   });
-  function onSessionFinished(){}
 
   // ---------------- replay ----------------
   // A past calendar week (Monday to Sunday), drawn with the planner layout from
@@ -1937,6 +1944,374 @@
   document.getElementById("replayView").addEventListener("change", function(e){
     if(e.target.id==="replayWeekSel"){ replayWeek = e.target.value; renderReplay(); }
   });
+
+  // ---------------- Google Drive sync ----------------
+  // The programme and every session are mirrored to a "531 Planner" folder in
+  // Andy's Drive, so the phone and laptop share them. All calls go straight
+  // from the browser to Google; there is no server. IndexedDB stays the working
+  // copy: logging never waits on Drive, changes queue up and sync when a token
+  // is available.
+
+  // ============================================================================
+  // GOOGLE OAUTH CLIENT ID. Paste the Web application client ID from Google
+  // Cloud (APIs & Services > Credentials) here. It is public, not a secret.
+  // Empty means Drive sync is switched off and the Link button explains why.
+  var GOOGLE_CLIENT_ID = "";
+  // ============================================================================
+
+  var DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  var DRIVE_FOLDER = IS_DEV ? "531 Planner (dev)" : "531 Planner";
+  var APP_TAG = IS_DEV ? "531-planner-dev" : "531-planner";
+  var FOLDER_MIME = "application/vnd.google-apps.folder";
+
+  // Google Identity Services token model. The script is loaded only when Drive
+  // is used, so the page works with it blocked. Tokens last about an hour and
+  // the browser gets no refresh token; one is kept in sessionStorage so a
+  // reload in the same tab does not need another sign-in, and nowhere else.
+  function googleAuth(){
+    var TOKEN_KEY = APP_TAG+"-token";
+    var token = null, expires = 0, client = null, scriptLoading = null;
+    var pending = null; // the sign-in waiting on Google's callback
+    try{
+      var kept = JSON.parse(sessionStorage.getItem(TOKEN_KEY) || "null");
+      if(kept && kept.expires > Date.now()){ token = kept.token; expires = kept.expires; }
+    }catch(e){}
+    function loadScript(){
+      if(scriptLoading) return scriptLoading;
+      scriptLoading = new Promise(function(resolve, reject){
+        var s = document.createElement("script");
+        s.src = "https://accounts.google.com/gsi/client";
+        s.async = true;
+        s.onload = resolve;
+        s.onerror = function(){ scriptLoading = null; reject(new Error("Could not load Google sign-in (blocked or offline)")); };
+        document.head.appendChild(s);
+      });
+      return scriptLoading;
+    }
+    return {
+      preload:function(){ if(GOOGLE_CLIENT_ID) loadScript().catch(noop); },
+      hasToken:function(){ return !!token && Date.now() < expires - 60000; },
+      token:function(){ return token; },
+      // must be called from a tap: it opens Google's popup, which is a brief
+      // one with nothing to fill in when Google still has a session
+      signIn:function(){
+        if(!GOOGLE_CLIENT_ID) return Promise.reject(new Error("No Google client ID set"));
+        return loadScript().then(function(){
+          return new Promise(function(resolve, reject){
+            pending = {resolve:resolve, reject:reject};
+            client = client || window.google.accounts.oauth2.initTokenClient({
+              client_id:GOOGLE_CLIENT_ID, scope:DRIVE_SCOPE,
+              callback:function(resp){
+                var p = pending; pending = null;
+                if(!p) return;
+                if(resp.error){ p.reject(new Error(resp.error_description || resp.error)); return; }
+                token = resp.access_token;
+                expires = Date.now() + (parseInt(resp.expires_in,10)||3600)*1000;
+                try{ sessionStorage.setItem(TOKEN_KEY, JSON.stringify({token:token, expires:expires})); }catch(e){}
+                p.resolve(token);
+              },
+              error_callback:function(err){
+                var p = pending; pending = null;
+                if(p) p.reject(new Error(err && err.type==="popup_closed" ? "Sign-in window closed" : "Sign-in failed"));
+              }
+            });
+            client.requestAccessToken({prompt:""});
+          });
+        });
+      },
+      clear:function(){ token = null; expires = 0; try{ sessionStorage.removeItem(TOKEN_KEY); }catch(e){} }
+    };
+  }
+
+  // Drive v3 over fetch: no gapi client library. With the drive.file scope the
+  // app only sees files it created.
+  function driveRest(getToken){
+    var API = "https://www.googleapis.com/drive/v3/files";
+    var UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+    var FIELDS = "id,name,mimeType,modifiedTime";
+    function call(url, opts){
+      opts = opts || {};
+      opts.headers = Object.assign({Authorization:"Bearer "+getToken()}, opts.headers || {});
+      return fetch(url, opts).then(function(r){
+        if(!r.ok){ var err = new Error("Drive error "+r.status); err.status = r.status; throw err; }
+        return r.status===204 ? null : r.json();
+      });
+    }
+    function quote(s){ return "'"+String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'"; }
+    function json(method, url, body){ return call(url, {method:method, headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}); }
+    return {
+      findFolder:function(name, tag){
+        var q = "name="+quote(name)+" and mimeType="+quote(FOLDER_MIME)+" and trashed=false and appProperties has { key='app' and value="+quote(tag)+" }";
+        return call(API+"?q="+encodeURIComponent(q)+"&fields="+encodeURIComponent("files("+FIELDS+")")+"&orderBy=modifiedTime desc")
+          .then(function(r){ return r.files[0] || null; });
+      },
+      createFolder:function(name, parentId, props){
+        return json("POST", API+"?fields="+FIELDS, {name:name, mimeType:FOLDER_MIME, parents:parentId ? [parentId] : undefined, appProperties:props || {}});
+      },
+      rename:function(id, name, props){ return json("PATCH", API+"/"+id+"?fields="+FIELDS, {name:name, appProperties:props || {}}); },
+      list:function(folderId){
+        var all = [];
+        function page(tok){
+          var q = quote(folderId)+" in parents and trashed=false";
+          return call(API+"?q="+encodeURIComponent(q)+"&pageSize=1000&fields="+encodeURIComponent("nextPageToken,files("+FIELDS+")")+(tok ? "&pageToken="+tok : ""))
+            .then(function(r){ all = all.concat(r.files); return r.nextPageToken ? page(r.nextPageToken) : all; });
+        }
+        return page(null);
+      },
+      read:function(id){ return call(API+"/"+id+"?alt=media"); },
+      create:function(parentId, name, data){
+        var boundary = "531planner"+Date.now();
+        var body = "--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+          + JSON.stringify({name:name, parents:[parentId], mimeType:"application/json"})
+          + "\r\n--"+boundary+"\r\nContent-Type: application/json\r\n\r\n"
+          + JSON.stringify(data)
+          + "\r\n--"+boundary+"--";
+        return call(UPLOAD+"?uploadType=multipart&fields="+FIELDS, {method:"POST", headers:{"Content-Type":"multipart/related; boundary="+boundary}, body:body});
+      },
+      update:function(id, data){ return json("PATCH", UPLOAD+"/"+id+"?uploadType=media&fields="+FIELDS, data); }
+    };
+  }
+
+  var fakes = window.PLANNER_FAKES || {};
+  var auth = fakes.auth || googleAuth();
+  var drive = fakes.drive || driveRest(function(){ return auth.token(); });
+  var SYNC_DELAY_MS = fakes.syncDelayMs || 2000;
+  var googleConfigured = !!(GOOGLE_CLIENT_ID || fakes.auth);
+
+  // when linked: {folderId, sessionsId, programme:{id, driveModified, localModified}, sessions:{date:{id, modifiedTime, rev}}, lastSync}
+  var link = null;
+  var syncStatus = "local"; // local | signin | pending | syncing | synced | failed | choose
+  var syncError = "";
+  var foundFolder = null;   // an existing Drive folder, while asking load or start from scratch
+
+  function saveLink(){ return link ? store.setMeta("link", link) : store.deleteMeta("link"); }
+  function setSyncStatus(st, err){
+    syncStatus = st;
+    if(err!==undefined) syncError = err;
+    renderSync();
+  }
+  function fmtTime(iso){ var d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"}); }
+
+  var SYNC_LABEL = {local:"Local only", signin:"Tap to sync", pending:"Pending", syncing:"Syncing…", synced:"Synced", failed:"Sync failed, retry", choose:"Link: choose in Settings"};
+  function renderSync(){
+    var pill = document.getElementById("syncPill");
+    pill.textContent = SYNC_LABEL[syncStatus] || syncStatus;
+    pill.className = "sync-pill" + (syncStatus==="synced" ? " ok" : syncStatus==="failed" || syncStatus==="signin" ? " bad" : "");
+    pill.title = syncStatus==="failed" ? syncError : link && link.lastSync ? "Last synced "+fmtTime(link.lastSync) : "";
+    pill.disabled = !link;
+
+    var body = document.getElementById("googleBody");
+    var html;
+    if(!googleConfigured){
+      html = '<p class="hint" style="margin-top:0">Drive sync is not set up yet: it needs a Google OAuth client ID (<code>GOOGLE_CLIENT_ID</code> in index.html).</p>'
+        + '<button class="btn" disabled>Link to Google</button>';
+    } else if(syncStatus==="choose" && foundFolder){
+      html = '<p class="hint" style="margin-top:0">Found a "'+escapeAttr(DRIVE_FOLDER)+'" folder in your Drive.</p>'
+        + '<p class="hint"><b>Load from Drive</b> replaces the programme on this device with the one in Drive and merges the logged sessions.</p>'
+        + '<p class="hint"><b>Start from scratch</b> renames that folder (nothing is deleted) and starts a new one from this device.</p>'
+        + '<div class="drive-btns"><button class="btn primary" data-drive="load">Load from Drive</button><button class="btn" data-drive="scratch">Start from scratch</button><button class="btn" data-drive="cancel">Cancel</button></div>';
+    } else if(!link){
+      html = '<p class="hint" style="margin-top:0">Keep the programme and workout logs in your Google Drive, so the phone and laptop share them.</p>'
+        + '<button class="btn primary" data-drive="link"'+(syncStatus==="syncing" ? " disabled" : "")+'>Link to Google</button>'
+        + (syncStatus==="failed" ? '<p class="hint drive-err">'+escapeAttr(syncError)+'</p>' : "");
+    } else {
+      html = '<p class="hint" style="margin-top:0">Linked to the "'+escapeAttr(DRIVE_FOLDER)+'" folder in Google Drive. '
+        + escapeAttr(SYNC_LABEL[syncStatus])+(link.lastSync ? ', last synced '+fmtTime(link.lastSync) : "")+'.</p>'
+        + (syncStatus==="failed" ? '<p class="hint drive-err">'+escapeAttr(syncError)+'</p>' : "")
+        + '<div class="drive-btns"><button class="btn primary" data-drive="sync">Sync now</button><button class="btn" data-drive="unlink">Unlink</button></div>';
+    }
+    body.innerHTML = html;
+  }
+
+  // ---- sync ----
+  var syncing = null, syncAgain = false, syncTimer = null;
+  function scheduleSync(){
+    if(!link) return;
+    setSyncStatus(auth.hasToken() ? "pending" : "signin");
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(function(){ syncNow(false); }, SYNC_DELAY_MS);
+  }
+  // interactive: called from a tap, so it may open Google's sign-in popup
+  function syncNow(interactive){
+    if(!link) return Promise.resolve();
+    if(syncing){ syncAgain = true; return syncing; }
+    clearTimeout(syncTimer);
+    var ready = auth.hasToken() ? Promise.resolve() : interactive ? auth.signIn() : null;
+    if(!ready){ setSyncStatus("signin"); return Promise.resolve(); }
+    setSyncStatus("syncing");
+    syncing = ready.then(syncProgramme).then(syncSessions).then(function(){
+      link.lastSync = nowISO();
+      return saveLink();
+    }).then(function(){
+      syncing = null;
+      setSyncStatus("synced", "");
+      if(syncAgain){ syncAgain = false; return syncNow(false); }
+    }, function(err){
+      syncing = null; syncAgain = false;
+      if(err && err.status===401){ auth.clear(); setSyncStatus("signin"); return; }
+      setSyncStatus("failed", (err && err.message) || "Sync failed");
+    });
+    return syncing;
+  }
+
+  // programme.json: last write wins, comparing Drive's modifiedTime with when
+  // this device last changed the programme
+  function syncProgramme(){
+    return drive.list(link.folderId).then(function(files){
+      var remote = files.filter(function(f){ return f.name==="programme.json"; })[0];
+      var known = link.programme || {};
+      var localDirty = programmeModified !== known.localModified;
+      if(remote && remote.modifiedTime!==known.driveModified && (!localDirty || remote.modifiedTime > programmeModified)){
+        return drive.read(remote.id).then(function(remoteState){
+          applyProgramme(remoteState, remote.modifiedTime);
+          link.programme = {id:remote.id, driveModified:remote.modifiedTime, localModified:programmeModified};
+        });
+      }
+      if(localDirty || !remote){
+        var body = JSON.parse(savedProgrammeJSON || JSON.stringify(state));
+        var mod = programmeModified;
+        return (remote ? drive.update(remote.id, body) : drive.create(link.folderId, "programme.json", body)).then(function(f){
+          link.programme = {id:f.id, driveModified:f.modifiedTime, localModified:mod};
+        });
+      }
+    });
+  }
+  function applyProgramme(remoteState, modified){
+    state = mergeState(remoteState);
+    savedProgrammeJSON = JSON.stringify(state);
+    programmeModified = modified;
+    store.setMeta("programme", {state:JSON.parse(savedProgrammeJSON), modified:modified}).catch(noop);
+    render();
+  }
+
+  // session files: merged by entry id, the newer `t` winning for the same id;
+  // tombstones (deleted: true) travel too, so a merge never brings a set back
+  function mergeSessions(local, remote){
+    if(!remote) return local;
+    if(!local){ var c = clone(remote); c.rev = 0; return c; }
+    var byId = {}, order = [];
+    local.entries.concat(remote.entries || []).forEach(function(e){
+      var cur = byId[e.id];
+      if(!cur){ byId[e.id] = e; order.push(e.id); }
+      else if((e.t||"") > (cur.t||"")) byId[e.id] = e;
+    });
+    var newer = (remote.updated||"") > (local.updated||"") ? remote : local;
+    return {date:local.date, programme:clone(newer.programme), entries:order.map(function(id){ return clone(byId[id]); }), updated:newer.updated, rev:local.rev||0};
+  }
+  function sessionForDrive(rec){ return {date:rec.date, programme:rec.programme, entries:rec.entries, updated:rec.updated}; }
+  function sameSession(a, b){
+    function key(r){
+      var d = sessionForDrive(r);
+      d.entries = d.entries.slice().sort(function(x, y){ return x.id < y.id ? -1 : x.id > y.id ? 1 : 0; });
+      return JSON.stringify(d);
+    }
+    return !!a && !!b && key(a)===key(b);
+  }
+  function syncSessions(){
+    var ensure = link.sessionsId ? Promise.resolve() : drive.createFolder("sessions", link.folderId, {}).then(function(f){ link.sessionsId = f.id; });
+    return ensure.then(function(){ return drive.list(link.sessionsId); }).then(function(files){
+      var remote = {};
+      files.forEach(function(f){ var m = /^(\d{4}-\d{2}-\d{2})\.json$/.exec(f.name); if(m) remote[m[1]] = f; });
+      link.sessions = link.sessions || {};
+      var dates = Object.keys(remote).concat(Object.keys(sessions).filter(function(d){ return !remote[d]; })).sort();
+      // one date at a time keeps it simple and the request rate low
+      return dates.reduce(function(p, date){ return p.then(function(){ return syncSession(date, remote[date]); }); }, Promise.resolve());
+    });
+  }
+  function syncSession(date, remoteFile){
+    var known = link.sessions[date] || {};
+    var remoteChanged = !!remoteFile && remoteFile.modifiedTime!==known.modifiedTime;
+    var localDirty = !!sessions[date] && (sessions[date].rev||0)!==known.rev;
+    if(!remoteChanged && !localDirty) return Promise.resolve();
+    return (remoteChanged ? drive.read(remoteFile.id) : Promise.resolve(null)).then(function(remoteRec){
+      var local = sessions[date]; // re-read: a set may have been logged while that download ran
+      var merged = mergeSessions(local, remoteRec);
+      if(merged!==local && !sameSession(merged, local)){
+        sessions[date] = merged;
+        store.putSession(merged).catch(noop);
+        refreshAfterPull(date);
+      }
+      var rev = merged.rev || 0;
+      var upToDate = remoteRec ? sameSession(merged, remoteRec) : !localDirty;
+      if(upToDate){ link.sessions[date] = {id:remoteFile.id, modifiedTime:remoteFile.modifiedTime, rev:rev}; return; }
+      var body = sessionForDrive(merged);
+      return (remoteFile ? drive.update(remoteFile.id, body) : drive.create(link.sessionsId, date+".json", body)).then(function(f){
+        link.sessions[date] = {id:f.id, modifiedTime:f.modifiedTime, rev:rev};
+      });
+    });
+  }
+  function refreshAfterPull(date){
+    var logBody = document.getElementById("logBody");
+    // leave the log alone while something in it has focus; it redraws on the next action
+    if(currentView==="log" && date===logDate && !logBody.contains(document.activeElement)) renderLog();
+    if(currentView==="replay") renderReplay();
+  }
+
+  // ---- linking ----
+  function driveFailed(err){ setSyncStatus("failed", (err && err.message) || "Could not reach Google Drive"); }
+  function startLink(){
+    setSyncStatus("syncing");
+    return auth.signIn().then(function(){ return drive.findFolder(DRIVE_FOLDER, APP_TAG); }).then(function(found){
+      if(found){ foundFolder = found; setSyncStatus("choose"); return; }
+      return createDriveFolder();
+    }).catch(driveFailed);
+  }
+  function createDriveFolder(){
+    return drive.createFolder(DRIVE_FOLDER, null, {app:APP_TAG}).then(function(folder){
+      return drive.createFolder("sessions", folder.id, {}).then(function(sub){
+        link = {folderId:folder.id, sessionsId:sub.id, programme:null, sessions:{}, lastSync:null};
+        return saveLink();
+      });
+    }).then(function(){ return syncNow(false); });
+  }
+  function loadFromDrive(){
+    var found = foundFolder; foundFolder = null;
+    setSyncStatus("syncing");
+    return drive.list(found.id).then(function(files){
+      var sub = files.filter(function(f){ return f.name==="sessions" && f.mimeType===FOLDER_MIME; })[0];
+      var prog = files.filter(function(f){ return f.name==="programme.json"; })[0];
+      link = {folderId:found.id, sessionsId:sub ? sub.id : null, programme:null, sessions:{}, lastSync:null};
+      if(!prog) return;
+      return drive.read(prog.id).then(function(remoteState){
+        applyProgramme(remoteState, prog.modifiedTime);
+        link.programme = {id:prog.id, driveModified:prog.modifiedTime, localModified:programmeModified};
+      });
+    }).then(saveLink).then(function(){ return syncNow(false); }).catch(driveFailed);
+  }
+  function startFromScratch(){
+    var found = foundFolder; foundFolder = null;
+    setSyncStatus("syncing");
+    // the old folder is kept, renamed and untagged so it is not found again
+    return drive.rename(found.id, DRIVE_FOLDER+" (old "+isoDate(new Date())+")", {app:APP_TAG+"-old"})
+      .then(createDriveFolder).catch(driveFailed);
+  }
+  function unlink(){
+    link = null; foundFolder = null;
+    clearTimeout(syncTimer);
+    saveLink().catch(noop);
+    setSyncStatus("local", "");
+  }
+
+  document.getElementById("googleBody").addEventListener("click", function(e){
+    var b = e.target.closest("[data-drive]");
+    if(!b) return;
+    var act = b.dataset.drive;
+    if(act==="link") startLink();
+    else if(act==="load") loadFromDrive();
+    else if(act==="scratch") startFromScratch();
+    else if(act==="cancel"){ foundFolder = null; setSyncStatus("local", ""); }
+    else if(act==="sync") syncNow(true);
+    else if(act==="unlink") unlink();
+  });
+  document.getElementById("syncPill").addEventListener("click", function(){ if(link) syncNow(true); });
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState==="visible" && link && auth.hasToken()) syncNow(false);
+  });
+
+  // the hooks the store and the logging view call
+  function onProgrammeChanged(){ scheduleSync(); }
+  function onSessionChanged(){ scheduleSync(); }
+  function onSessionFinished(){ if(link) syncNow(true); }
 
   // ---------------- copy / print ----------------
   function buildPlainText(program){
@@ -2078,33 +2453,51 @@
   // our own writes use history.replaceState, which never fires hashchange, so this
   // only fires on an actual navigation — e.g. pasting a different shared link into
   // this same tab, or using back/forward — and is safe from feedback loops
+  // opening a share link while linked to Drive would overwrite programme.json
+  // for every device, so ask first
+  function confirmShareLink(fromLink, current){
+    if(JSON.stringify(mergeState(fromLink))===JSON.stringify(mergeState(current))) return true;
+    return window.confirm("This link has a different programme. Replace your programme, here and in Google Drive, with the one in the link?");
+  }
   window.addEventListener("hashchange", function(){
-    if(hashState()) state = loadState();
+    var fromLink = hashState();
+    if(fromLink && (!link || confirmShareLink(fromLink, state))) state = mergeState(fromLink);
     var v = hashParams().v;
     render();
     setView(VIEWS.indexOf(v)>=0 ? v : "plan");
   });
   render();
   setView(currentView);
+  renderSync();
 
   // the store opens asynchronously; until then the page shows the share link's
   // programme (or the defaults). A share link in the URL wins over the saved
   // programme; without one, the saved programme is loaded.
   var storeLoaded = openStore().then(function(st){
     store = st;
-    return Promise.all([st.getMeta("programme"), st.allSessions()]);
+    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link")]);
   }).then(function(res){
     var saved = res[0];
     (res[1]||[]).forEach(function(rec){ sessions[rec.date] = rec; });
+    link = res[2] || null;
     if(saved && saved.state){
       savedProgrammeJSON = JSON.stringify(saved.state);
-      if(!hashState()) state = mergeState(saved.state);
+      programmeModified = saved.modified || null;
+      var fromLink = hashState();
+      if(!fromLink) state = mergeState(saved.state);
+      else if(link && !confirmShareLink(fromLink, saved.state)) state = mergeState(saved.state);
     }
     storeReady = true;
     render();
     setView(currentView);
+    persistProgramme(); // now, not after the save debounce, so a first sync sees it
+    if(link){
+      if(auth.preload) auth.preload();
+      syncNow(false);
+    }
+    renderSync();
   }).catch(function(){
-    store = memoryStore(); storeReady = true; render(); setView(currentView);
+    store = memoryStore(); storeReady = true; render(); setView(currentView); renderSync();
   });
 })();
 </script>
