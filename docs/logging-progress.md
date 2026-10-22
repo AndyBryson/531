@@ -62,6 +62,13 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Typing reps and then tapping the tick used to overwrite them with the planned reps. The tick now reads the row's reps field: empty means as planned, otherwise those reps are logged with status `ticked`. Changing the reps of a ticked set keeps it ticked; clearing them returns to the plan.
 - A ticked set whose reps differ from the plan shows "Done, N reps" and counts as changed. Reps are compared as numbers, since planned reps can be strings ("10" for BBB).
 
+### Plan names and replay by plan (22 Oct, Andy's request)
+- Plan name is enforced as `YYYY-MM-DD` with an optional ` - title`. The planner header is a date input (required: clearing it restores the previous date) plus an optional title input; `state.programTitle` holds the joined name. `mergeState()` normalises every loaded state: a name that does not start with a real date (old names, share links) gets today's date and keeps its text as the title. The default for a new plan is today's date.
+- Print shows the full name in a print-only `#printTitle` heading; the inputs are hidden in print.
+- Replay now picks a plan (sessions grouped by their `programme.title`, most recently logged first) and then a programme week of that plan (defaulting to the latest logged). Sessions of the same plan and week are drawn together whatever calendar week they fell in. This replaces calendar-week grouping.
+- Old sessions keep the title they were logged with (not renamed), so they appear under that name; a blank one shows as "Untitled plan".
+- Bug caught by tests: the plan-name pattern was a `var` further down the script than the first `loadState()`, so share links failed to import. The pattern now lives inside `splitPlanName()`.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 
@@ -82,7 +89,7 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - (Superseded 22 Oct: comments now work on any set.) The ⋯ menu also has Skip and Clear. Clearing or unticking leaves a tombstone (`deleted: true`).
 - "Changed" marking: weight differs from the plan, or reps differ (for AMRAP only when fewer than prescribed; ranges like 10-15 never count as changed).
 - Ad hoc exercise names are matched to an existing name ignoring case and spacing, and stored with that spelling. "Add set" logs one set and keeps the form filled for the next.
-- Replay groups by calendar week (Monday start), since a programme week number repeats every cycle. A calendar week normally holds one programme week; if it holds more, each is drawn in turn.
+- (Superseded 22 Oct: replay is by plan name and week.) Replay first grouped by calendar week.
 - In replay, a day with a session but no entry for a planned set shows it as missed (warm-ups included).
 - Sign-in needs a tap. Popups opened without a user gesture are blocked, so on load with no token the app does not try; the pill says "Tap to sync" and a tap signs in (a brief popup when Google still has a session) and syncs. Finish session and Sync now also count as taps. Logging is never blocked.
 - The access token is kept in `sessionStorage` (this tab only, cleared when it closes) with its expiry, so a reload within the hour does not need another tap. Nothing else about auth is stored. This is the one use of Web Storage.

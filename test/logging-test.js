@@ -181,7 +181,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const prod = load({ url: 'https://andybryson.github.io/531/' });
     await wait(100);
     log('prod: no DEV banner', prod.doc.getElementById('devBanner').hidden === true);
-    log('prod: title has no DEV prefix', prod.doc.title === '531 Planner');
+    log('prod: title has no DEV prefix', /^531 Planner - \d{4}-\d{2}-\d{2}$/.test(prod.doc.title));
     done(prod);
     const dev = load({ url: 'https://andybryson.github.io/531/dev/' });
     await wait(100);
@@ -349,13 +349,23 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
       { date: twoWeeksAgo, programme: { title: 'Cycle 2', week: 3, day: 2, state: Object.assign({}, snapshot, { programTitle: 'Cycle 2' }) }, updated: 'x', rev: 1, entries: [
         { id: 'e', t: 'x', exercise: 'Deadlift', weight: 140, unit: 'kg', reps: 1, status: 'ticked', planned: { key: 'main:3', lift: 'deadlift', kind: 'work', set: 1, reps: 5, amrap: false, weight: 140 }, note: '' },
       ] },
+      // the same plan and week, finished the following calendar week (day 3)
+      { date: daysFrom(lastTue, 6), programme: { title: 'Cycle 3', week: 1, day: 3, state: snapshot }, updated: 'x', rev: 1, entries: [
+        { id: 'f', t: 'x', exercise: 'Bench Press', weight: 52.5, unit: 'kg', reps: 5, status: 'ticked', planned: { key: 'main:3', lift: 'bench', kind: 'work', set: 1, reps: 5, amrap: false, weight: 52.5 }, note: '' },
+      ] },
+      // an earlier week of the same plan
+      { date: daysFrom(lastTue, -1), programme: { title: 'Cycle 3', week: 2, day: 1, state: snapshot }, updated: 'x', rev: 1, entries: [
+        { id: 'g', t: 'x', exercise: 'Overhead Press', weight: 35, unit: 'kg', reps: 3, status: 'ticked', planned: { key: 'main:3', lift: 'ohp', kind: 'work', set: 1, reps: 3, amrap: false, weight: 35 }, note: '' },
+      ] },
     ]);
     const dom = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
     const doc = dom.doc;
     await wait(200);
     log('#v=replay opens the replay view', doc.body.dataset.view === 'replay');
-    const sel = doc.getElementById('replayWeekSel');
-    log('replay lists logged calendar weeks, newest first', !!sel && sel.options.length === 2 && sel.value === lastMon && sel.options[1].value === mondayOf(twoWeeksAgo));
+    const planSel = () => doc.getElementById('replayPlanSel');
+    const weekSel = () => doc.getElementById('replayWeekSel');
+    log('replay picks by plan name, most recently logged plan first', Array.from(planSel().options).map(o => o.textContent).join('|') === 'Cycle 3|Cycle 2');
+    log('then by week within the plan, defaulting to the latest logged', Array.from(weekSel().options).map(o => o.textContent).join('|') === 'Week 1|Week 2' && weekSel().selectedOptions[0].textContent === 'Week 1');
     const view = doc.getElementById('replayView');
     log('replay titles the week from the snapshot (Cycle 3, Week 1)', /Cycle 3 · Week 1/.test(view.querySelector('.replay-title').textContent));
     log('replay uses the snapshot TMs, not the current programme', /OHP 50/.test(view.textContent) && /Deadlift 150/.test(view.textContent));
@@ -371,13 +381,17 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('ad hoc exercise listed under its day after the programme sets', /Cossack squat \(extra\)/.test(day1.textContent) && /8 × 24 kg/.test(day1.textContent));
     log('day card says which date it was logged', day1.querySelector('.day-idx').textContent.includes('Day 1'));
     log('a day with no session shows the plan only', cards[1].classList.contains('unlogged') && /not logged/.test(cards[1].textContent) && !cards[1].querySelector('.missed, .done'));
-    setValue(dom, sel, mondayOf(twoWeeksAgo));
+    log('a week logged across two calendar weeks is drawn together', !cards[2].classList.contains('unlogged') && cards[2].querySelectorAll('.replay-row.done').length === 1 && !cards[0].classList.contains('unlogged'));
+    setValue(dom, weekSel(), '2');
+    await wait(30);
+    log('picking another week of the plan redraws it (Cycle 3, Week 2)', /Cycle 3 · Week 2/.test(doc.querySelector('#replayView .replay-title').textContent) && doc.querySelectorAll('#replayView .day-card')[0].querySelectorAll('.replay-row.done').length === 1);
+    setValue(dom, planSel(), '1');
     await wait(30);
     const v2 = doc.getElementById('replayView');
-    log('picking another week redraws it (Cycle 2, Week 3)', /Cycle 2 · Week 3/.test(v2.querySelector('.replay-title').textContent));
+    log('picking another plan shows its logged week (Cycle 2, Week 3)', /Cycle 2 · Week 3/.test(v2.querySelector('.replay-title').textContent));
     const dl = v2.querySelectorAll('.day-card')[1];
     log('week 3 day 2 shows the logged deadlift set as changed (1 rep at 140, plan 5)', /Deadlift/.test(dl.querySelector('h3').textContent) && dl.querySelectorAll('.replay-row.done, .replay-row.changed').length === 1);
-    log('replay never changes the current programme', doc.getElementById('programTitle').value === '' && /OHP 55 /.test(doc.getElementById('programSub').textContent));
+    log('replay never changes the current programme', doc.getElementById('programDate').value === TODAY && doc.getElementById('programTitle').value === '' && /OHP 55 /.test(doc.getElementById('programSub').textContent));
     done(dom);
 
     const empty = load({ url: 'https://andybryson.github.io/531/#v=replay', idb: new IDBFactory() });
@@ -478,7 +492,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('linking signs in and creates the "531 Planner" folder, tagged', authA.signIns === 1 && !!folder && folder.appProperties.app === '531-planner');
     log('a sessions subfolder is created inside it', !!gdrive.byName('sessions', '531 Planner'));
     const progJson = gdrive.json('programme.json', '531 Planner');
-    log('programme.json holds the current planner state', !!progJson && progJson.programTitle === 'Cycle 5' && progJson.template === 'bbb');
+    log('programme.json holds the current planner state', !!progJson && progJson.programTitle === TODAY + ' - Cycle 5' && progJson.template === 'bbb');
     const sessA = gdrive.json(TODAY + '.json', 'sessions');
     log('today\'s session is uploaded as sessions/<date>.json', !!sessA && sessA.date === TODAY && sessA.entries.length === 1 && sessA.entries[0].status === 'ticked');
     log('the Drive copy leaves out the local rev counter', sessA && !('rev' in sessA));
@@ -526,7 +540,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     B.doc.querySelector('#viewTabs [data-view="plan"]').click();
     setValue(B, B.doc.getElementById('programTitle'), 'Cycle 5 (phone edit)', 'input');
     await wait(450);
-    log('programme edit on B is pushed to programme.json', gdrive.json('programme.json', '531 Planner').programTitle === 'Cycle 5 (phone edit)');
+    log('programme edit on B is pushed to programme.json', gdrive.json('programme.json', '531 Planner').programTitle === TODAY + ' - Cycle 5 (phone edit)');
     A.window.document.dispatchEvent(new A.window.Event('visibilitychange'));
     await wait(150);
     log('A takes the newer programme from Drive', A.doc.getElementById('programTitle').value === 'Cycle 5 (phone edit)');
@@ -566,11 +580,11 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const declined = load({ url: 'https://andybryson.github.io/531/' + shareHash, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => { asked++; return false; } });
     await wait(250);
     log('opening a share link while linked asks first', asked === 1);
-    log('declining keeps the saved programme', declined.doc.getElementById('programTitle').value === 'Cycle 5 (phone edit)' && gdrive.json('programme.json', '531 Planner').programTitle === 'Cycle 5 (phone edit)');
+    log('declining keeps the saved programme', declined.doc.getElementById('programTitle').value === 'Cycle 5 (phone edit)' && gdrive.json('programme.json', '531 Planner').programTitle === TODAY + ' - Cycle 5 (phone edit)');
     done(declined);
     const accepted = load({ url: 'https://andybryson.github.io/531/' + shareHash, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => true });
     await wait(500);
-    log('accepting uses the link and pushes it to programme.json', accepted.doc.getElementById('programTitle').value === 'Shared by a friend' && gdrive.json('programme.json', '531 Planner').programTitle === 'Shared by a friend');
+    log('accepting uses the link and pushes it to programme.json', accepted.doc.getElementById('programTitle').value === 'Shared by a friend' && gdrive.json('programme.json', '531 Planner').programTitle === TODAY + ' - Shared by a friend');
     done(accepted);
 
     // device C: start from scratch keeps the old folder, renamed
@@ -585,7 +599,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('and creates a fresh folder from this device', folders.filter(f => f.name === '531 Planner' && f.appProperties.app === '531-planner').length === 1);
     const fresh = await gdrive.findFolder('531 Planner', '531-planner');
     const freshProg = JSON.parse(Object.values(gdrive.files).find(f => f.name === 'programme.json' && f.parents.includes(fresh.id)).content);
-    log('the fresh folder holds this device\'s programme', freshProg.programTitle === '');
+    log('the fresh folder holds this device\'s programme', freshProg.programTitle === TODAY);
     driveBtn(C.doc, 'unlink').click();
     await wait(30);
     log('unlink returns to local only', C.doc.getElementById('syncPill').textContent === 'Local only' && !!driveBtn(C.doc, 'link'));
@@ -862,6 +876,63 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     setValue(dom, rowBy(doc, 'main:0').querySelector('[data-act="reps"]'), '');
     await wait(30);
     log('clearing the reps of a ticked set goes back to the plan', (await entryFor('main:0')).reps === 5 && rowBy(doc, 'main:0').classList.contains('done'));
+    done(dom);
+  }
+
+
+  // ---------------- plan name: YYYY-MM-DD with an optional title ----------------
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/', idb });
+    const doc = dom.doc;
+    await wait(150);
+    log('a new plan is named by today\'s date with no title', doc.getElementById('programDate').value === TODAY && doc.getElementById('programTitle').value === '' && doc.getElementById('printTitle').textContent === TODAY);
+    setValue(dom, doc.getElementById('programTitle'), 'Cycle 6', 'input');
+    setValue(dom, doc.getElementById('programDate'), '2026-11-02');
+    await wait(350);
+    const saved = await idbGet(idb, '531-planner', 'meta', 'programme');
+    log('the name is saved as "YYYY-MM-DD - title"', saved.state.programTitle === '2026-11-02 - Cycle 6' && doc.getElementById('printTitle').textContent === '2026-11-02 - Cycle 6' && /2026-11-02 - Cycle 6$/.test(doc.title));
+    setValue(dom, doc.getElementById('programDate'), '');
+    await wait(20);
+    log('the date cannot be cleared', doc.getElementById('programDate').value === '2026-11-02');
+    setValue(dom, doc.getElementById('programTitle'), '  ', 'input');
+    await wait(350);
+    log('an empty title leaves just the date', (await idbGet(idb, '531-planner', 'meta', 'programme')).state.programTitle === '2026-11-02');
+    let copied = null;
+    dom.window.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
+    doc.getElementById('copyBtn').click();
+    await wait(10);
+    log('Copy program starts with the plan name', !!copied && copied.split('\n')[0] === '2026-11-02');
+    done(dom);
+
+    const linkFor = st => '#s=' + Buffer.from(JSON.stringify(st)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const dated = load({ url: 'https://andybryson.github.io/531/' + linkFor({ programTitle: '2026-10-05' }), idb: new IDBFactory() });
+    await wait(200);
+    log('an existing dated name is kept ("2026-10-05")', dated.doc.getElementById('programDate').value === '2026-10-05' && dated.doc.getElementById('programTitle').value === '');
+    done(dated);
+    const old = load({ url: 'https://andybryson.github.io/531/' + linkFor({ programTitle: 'Cycle 4' }), idb: new IDBFactory() });
+    await wait(200);
+    log('an old name without a date gets today\'s date and keeps its text as the title', old.doc.getElementById('programDate').value === TODAY && old.doc.getElementById('programTitle').value === 'Cycle 4');
+    done(old);
+    const bad = load({ url: 'https://andybryson.github.io/531/' + linkFor({ programTitle: '2026-02-30 - Nope' }), idb: new IDBFactory() });
+    await wait(200);
+    log('an impossible date is not accepted as the plan date', bad.doc.getElementById('programDate').value === TODAY);
+    done(bad);
+  }
+
+  // a failed set (reps short) can carry a comment too
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    await wait(150);
+    setValue(dom, rowBy(dom.doc, 'main:5').querySelector('[data-act="reps"]'), '0');
+    await wait(10);
+    rowBy(dom.doc, 'main:5').querySelector('[data-act="more"]').click();
+    await wait(10);
+    setValue(dom, rowBy(dom.doc, 'main:5').querySelector('[data-act="note"]'), 'failed the first rep');
+    await wait(30);
+    const e5 = (await idbGet(idb, '531-planner', 'sessions', TODAY)).entries.find(e => e.planned.key === 'main:5');
+    log('a failed set (0 reps) takes a comment', e5.reps === 0 && e5.note === 'failed the first rep' && /failed the first rep/.test(rowBy(dom.doc, 'main:5').textContent));
     done(dom);
   }
 

@@ -121,6 +121,12 @@
     background:none; border:none; border-bottom:2px dashed var(--rule); padding:2px 2px 4px; color:var(--text); min-width:220px; flex:1;
   }
   .program-title-input:focus{outline:none; border-bottom-color:var(--accent);}
+  .plan-name{display:flex; align-items:baseline; gap:8px; flex:1 1 440px; min-width:260px; flex-wrap:wrap;}
+  .plan-name .program-title-input{min-width:160px;}
+  .program-date-input{font-family:var(--display); font-size:22px; font-weight:600; background:none; border:none; border-bottom:2px dashed var(--rule); border-radius:0; padding:2px 2px 4px; color:var(--text);}
+  .program-date-input:focus{outline:none; border-bottom-color:var(--accent);}
+  .plan-sep{font-family:var(--display); font-size:22px; color:var(--text-dim);}
+  .print-title{display:none;}
   .program-sub{font-size:12px; color:var(--text-dim);}
   .program-actions{display:flex; gap:8px; flex:none;}
 
@@ -268,7 +274,8 @@
 
   /* centred title, TM line underneath */
   .program-head{display:block; text-align:center; margin-bottom:calc(var(--ps) * 2px);}
-  .program-title-input{display:block; width:100%; min-width:0; text-align:center; font-size:calc(var(--ps) * 19px); padding:0; border:none; color:#000;}
+  .plan-name{display:none !important;}
+  .print-title{display:block; text-align:center; font-size:calc(var(--ps) * 19px); color:#000;}
   .program-sub{display:block; text-align:center; color:#000; font-size:calc(var(--ps) * 10px); margin-top:0;}
 
   /* every week prints, one to a page, instead of only the tab currently open on screen */
@@ -415,7 +422,12 @@
 
     <main class="output" id="output">
       <div class="program-head">
-        <input type="text" id="programTitle" class="program-title-input" placeholder="Untitled cycle">
+        <div class="plan-name">
+          <input type="date" id="programDate" class="program-date-input" aria-label="Plan start date" required>
+          <span class="plan-sep">-</span>
+          <input type="text" id="programTitle" class="program-title-input" placeholder="Optional title" aria-label="Plan title (optional)">
+        </div>
+        <h1 class="print-title" id="printTitle"></h1>
         <span class="program-sub" id="programSub"></span>
         <div class="program-actions">
           <button class="btn" id="copyBtn">Copy program</button>
@@ -551,7 +563,8 @@
       liftOrder:["ohp","deadlift","bench","squat"],
       plates:Object.assign({}, DEFAULT_PLATES_KG),
       showPlates:true,
-      programTitle:"",
+      // the plan's name: "YYYY-MM-DD" (start date) plus an optional " - title"
+      programTitle:isoDate(new Date()),
       // Standard + partner FSL: sets of 5 for each lift when it's done as FSL on its partner's day
       partnerFslSets:{ohp:5, bench:5, squat:5, deadlift:5},
       // Standard + partner FSL: optional sets of 5 of the day's own lift, straight after its main sets (0 = off)
@@ -592,7 +605,7 @@
     try{
       var d = defaultState();
       // shallow-merge to survive future field additions
-      return Object.assign(d, parsed, {
+      var merged = Object.assign(d, parsed, {
         lifts:Object.assign(d.lifts, parsed.lifts||{}),
         weeks:Object.assign(d.weeks, parsed.weeks||{}),
         accessories:Object.assign(d.accessories, parsed.accessories||{}),
@@ -600,8 +613,29 @@
         partnerFslSets:Object.assign({}, d.partnerFslSets, parsed.partnerFslSets||{}),
         ownFslSets:Object.assign({}, d.ownFslSets, parsed.ownFslSets||{})
       });
+      merged.programTitle = normalisePlanName(merged.programTitle);
+      return merged;
     }catch(e){ return defaultState(); }
   }
+
+  // ---------------- plan name ----------------
+  // Every plan is named by its start date, "YYYY-MM-DD", optionally followed by
+  // " - " and a title ("2026-10-05 - Cycle 4"). The planner edits the two parts
+  // separately and keeps the joined name in state.programTitle. A name without
+  // a valid date (from before this rule) gets today's date, keeping its text.
+  // (the pattern lives inside the function: the hash state is merged at the top
+  // of the script, before any var further down has been assigned)
+  function splitPlanName(name){
+    var text = String(name==null ? "" : name).trim();
+    var m = /^(\d{4}-\d{2}-\d{2})(?:\s+-\s*(.*))?$/.exec(text);
+    if(m && isoDate(parseDate(m[1]))===m[1]) return {date:m[1], title:(m[2]||"").trim()};
+    return {date:isoDate(new Date()), title:text};
+  }
+  function joinPlanName(date, title){
+    title = String(title||"").trim();
+    return date + (title ? " - "+title : "");
+  }
+  function normalisePlanName(name){ var p = splitPlanName(name); return joinPlanName(p.date, p.title); }
 
   var saveTimer = null;
   function saveState(){
@@ -1173,8 +1207,10 @@
     }).join("");
     document.getElementById("showPlatesCheck").checked = state.showPlates;
 
-    document.getElementById("programTitle").value = state.programTitle;
-    document.title = state.programTitle ? APP_TITLE+" - "+state.programTitle : APP_TITLE;
+    var planName = splitPlanName(state.programTitle);
+    document.getElementById("programDate").value = planName.date;
+    document.getElementById("programTitle").value = planName.title;
+    showPlanName();
 
     renderAccessoryEditor();
   }
@@ -1290,9 +1326,21 @@
     if(t.id==="showPlatesCheck"){ state.showPlates = t.checked; render(); return; }
   });
 
+  function showPlanName(){
+    document.getElementById("printTitle").textContent = state.programTitle;
+    document.title = APP_TITLE+" - "+state.programTitle;
+  }
   document.getElementById("programTitle").addEventListener("input", function(e){
-    state.programTitle = e.target.value;
-    document.title = state.programTitle ? APP_TITLE+" - "+state.programTitle : APP_TITLE;
+    state.programTitle = joinPlanName(splitPlanName(state.programTitle).date, e.target.value);
+    showPlanName();
+    saveState();
+  });
+  // the date is required: clearing it puts the previous one back
+  document.getElementById("programDate").addEventListener("change", function(e){
+    var current = splitPlanName(state.programTitle);
+    if(splitPlanName(e.target.value).date!==e.target.value){ e.target.value = current.date; return; }
+    state.programTitle = joinPlanName(e.target.value, current.title);
+    showPlanName();
     saveState();
   });
 
@@ -1905,14 +1953,23 @@
   // the programme state saved with that week's sessions, each planned set
   // showing what was actually done beside it.
   function parseDate(iso){ var p = iso.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
-  function mondayOf(iso){ var d = parseDate(iso); d.setDate(d.getDate() - (d.getDay()+6)%7); return isoDate(d); }
   function fmtDay(iso){ return parseDate(iso).toLocaleDateString("en-GB", {weekday:"short", day:"numeric", month:"short"}); }
-  function fmtLongDate(iso){ return parseDate(iso).toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric"}); }
 
-  function loggedWeeks(){
-    var weeks = {};
-    sessionDates().forEach(function(d){ if(liveEntries(sessions[d]).length) weeks[mondayOf(d)] = true; });
-    return Object.keys(weeks).sort().reverse();
+  // logged sessions grouped by plan name, newest plan first, each with the
+  // programme weeks logged under it
+  function loggedPlans(){
+    var plans = {}, list = [];
+    sessionDates().forEach(function(d){
+      var r = sessions[d];
+      if(!liveEntries(r).length) return;
+      var name = (r.programme && r.programme.title) || "";
+      var week = (r.programme && r.programme.week) || 1;
+      if(!plans[name]){ plans[name] = {name:name, weeks:{}, latest:d, latestWeek:week}; list.push(plans[name]); }
+      var p = plans[name];
+      (p.weeks[week] = p.weeks[week] || []).push(r);
+      if(d >= p.latest){ p.latest = d; p.latestWeek = week; }
+    });
+    return list.sort(function(a, b){ return a.latest < b.latest ? 1 : a.latest > b.latest ? -1 : 0; });
   }
 
   // runs fn with `state` temporarily swapped for a saved snapshot, so the
@@ -1981,56 +2038,49 @@
       + '<div class="day-body">'+body+'</div></div>';
   }
 
-  var replayWeek = null;
+  var replayPlan = null, replayWeekNum = null;
   function renderReplay(){
     var el = document.getElementById("replayView");
     if(!storeReady){ el.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
-    var weeks = loggedWeeks();
-    if(!weeks.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Sessions logged in the Log tab show up here, planned and done side by side.</p>'; return; }
-    if(weeks.indexOf(replayWeek)<0) replayWeek = weeks[0];
-    var end = parseDate(replayWeek); end.setDate(end.getDate()+6);
-    var endIso = isoDate(end);
-    var recs = sessionDates().filter(function(d){ return d>=replayWeek && d<=endIso && liveEntries(sessions[d]).length; }).map(function(d){ return sessions[d]; });
-
-    // usually one programme week per calendar week, but draw each one found
-    var byWeek = {}, weekOrder = [];
-    recs.forEach(function(r){
-      var w = r.programme && r.programme.week || 1;
-      if(!byWeek[w]){ byWeek[w] = []; weekOrder.push(w); }
-      byWeek[w].push(r);
-    });
-    var blocks = weekOrder.map(function(w){
-      var group = byWeek[w];
-      var latest = group[group.length-1];
-      var snapshot = latest.programme.state || state;
-      return withState(snapshot, function(){
-        state.weeks[w] = true; // the week was logged, so draw it even if since hidden
-        var program = generateProgram();
-        var wk = program.weeks.filter(function(x){ return x.week===w; })[0];
-        var cards = wk ? wk.days.map(function(day, i){
-          return replayDayHTML(day, i+1, group.filter(function(r){ return r.programme.day===i+1; }));
-        }).join("") : "";
-        // sessions whose day no longer exists in the snapshot (e.g. 4 days became 3)
-        var stray = group.filter(function(r){ return !wk || r.programme.day > wk.days.length; });
-        stray.forEach(function(r){
-          cards += '<div class="day-card"><div class="day-head"><h3>Day '+r.programme.day+'</h3><span class="day-idx">'+fmtDay(r.date)+'</span></div><div class="day-body">'
-            + liveEntries(r).map(function(e){ return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">'+escapeAttr(e.exercise)+': '+escapeAttr(resultText(e))+'</span></div></div>'; }).join("")
-            + '</div></div>';
-        });
-        var title = latest.programme.title || "Untitled cycle";
-        return '<h2 class="replay-title">'+escapeAttr(title)+' · '+WEEK_LABEL[w]+'</h2>'
-          + '<p class="program-sub">TM: OHP '+fmtWeight(program.tms.ohp)+' · Bench '+fmtWeight(program.tms.bench)+' · Squat '+fmtWeight(program.tms.squat)+' · Deadlift '+fmtWeight(program.tms.deadlift)+' '+unitLabel()+'</p>'
-          + '<div class="replay-cards">'+cards+'</div>';
+    var plans = loggedPlans();
+    if(!plans.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Sessions logged in the Log tab show up here, planned and done side by side.</p>'; return; }
+    var plan = plans.filter(function(p){ return p.name===replayPlan; })[0];
+    if(!plan){ plan = plans[0]; replayWeekNum = null; }
+    replayPlan = plan.name;
+    var weekNums = Object.keys(plan.weeks).map(Number).sort(function(a, b){ return a-b; });
+    if(weekNums.indexOf(replayWeekNum)<0) replayWeekNum = plan.latestWeek;
+    var w = replayWeekNum;
+    var group = plan.weeks[w];
+    var latest = group[group.length-1];
+    var block = withState(latest.programme.state || state, function(){
+      state.weeks[w] = true; // the week was logged, so draw it even if since hidden
+      var program = generateProgram();
+      var wk = program.weeks.filter(function(x){ return x.week===w; })[0];
+      var cards = wk ? wk.days.map(function(day, i){
+        return replayDayHTML(day, i+1, group.filter(function(r){ return r.programme.day===i+1; }));
+      }).join("") : "";
+      // sessions whose day no longer exists in the snapshot (e.g. 4 days became 3)
+      group.filter(function(r){ return !wk || r.programme.day > wk.days.length; }).forEach(function(r){
+        cards += '<div class="day-card"><div class="day-head"><h3>Day '+r.programme.day+'</h3><span class="day-idx">'+fmtDay(r.date)+'</span></div><div class="day-body">'
+          + liveEntries(r).map(function(e){ return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">'+escapeAttr(e.exercise)+': '+escapeAttr(resultText(e))+'</span></div></div>'; }).join("")
+          + '</div></div>';
       });
-    }).join("");
+      return '<h2 class="replay-title">'+escapeAttr(plan.name || "Untitled plan")+' · '+WEEK_LABEL[w]+'</h2>'
+        + '<p class="program-sub">TM: OHP '+fmtWeight(program.tms.ohp)+' · Bench '+fmtWeight(program.tms.bench)+' · Squat '+fmtWeight(program.tms.squat)+' · Deadlift '+fmtWeight(program.tms.deadlift)+' '+unitLabel()+'</p>'
+        + '<div class="replay-cards">'+cards+'</div>';
+    });
 
-    el.innerHTML = '<div class="replay-head"><label for="replayWeekSel">Week of</label>'
-      + '<select id="replayWeekSel">'+weeks.map(function(w){ return '<option value="'+w+'"'+(w===replayWeek?" selected":"")+'>'+fmtLongDate(w)+'</option>'; }).join("")+'</select>'
+    el.innerHTML = '<div class="replay-head">'
+      + '<label for="replayPlanSel">Plan</label>'
+      + '<select id="replayPlanSel">'+plans.map(function(p, i){ return '<option value="'+i+'"'+(p===plan?" selected":"")+'>'+escapeAttr(p.name || "Untitled plan")+'</option>'; }).join("")+'</select>'
+      + '<label for="replayWeekSel">Week</label>'
+      + '<select id="replayWeekSel">'+weekNums.map(function(n){ return '<option value="'+n+'"'+(n===w?" selected":"")+'>'+WEEK_LABEL[n]+'</option>'; }).join("")+'</select>'
       + '<span class="replay-key"><span class="k done">done</span><span class="k changed">changed</span><span class="k missed">missed</span></span></div>'
-      + blocks;
+      + block;
   }
   document.getElementById("replayView").addEventListener("change", function(e){
-    if(e.target.id==="replayWeekSel"){ replayWeek = e.target.value; renderReplay(); }
+    if(e.target.id==="replayPlanSel"){ replayPlan = loggedPlans()[parseInt(e.target.value, 10)].name; replayWeekNum = null; renderReplay(); }
+    if(e.target.id==="replayWeekSel"){ replayWeekNum = parseInt(e.target.value, 10); renderReplay(); }
   });
 
   // ---------------- Google Drive sync ----------------
@@ -2404,7 +2454,7 @@
   // ---------------- copy / print ----------------
   function buildPlainText(program){
     var lines = [];
-    lines.push(state.programTitle || "5/3/1 Cycle");
+    lines.push(state.programTitle);
     lines.push("TM: OHP " + fmtWeight(program.tms.ohp) + unitLabel() + ", Bench " + fmtWeight(program.tms.bench) + unitLabel() + ", Squat " + fmtWeight(program.tms.squat) + unitLabel() + ", Deadlift " + fmtWeight(program.tms.deadlift) + unitLabel());
     lines.push("");
     program.weeks.forEach(function(w){
