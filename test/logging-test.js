@@ -437,6 +437,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     }
     const prodSw = swRoutes('https://andybryson.github.io/531/');
     log('prod worker handles the prod page', prodSw('https://andybryson.github.io/531/', 'navigate') === true);
+    await wait(20);
     log('page loads revalidate with the server (no-cache), so a deploy shows at once', swFetches.some(f => f.u === 'https://andybryson.github.io/531/' && f.o && f.o.cache === 'no-cache'));
     log('prod worker ignores everything under /531/dev/', prodSw('https://andybryson.github.io/531/dev/', 'navigate') === false && prodSw('https://andybryson.github.io/531/dev/sw.js') === false);
     log('prod worker leaves Google sign-in and Drive to the network', prodSw('https://accounts.google.com/gsi/client') === false && prodSw('https://www.googleapis.com/drive/v3/files') === false);
