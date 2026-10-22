@@ -15,7 +15,9 @@
 - `index.html` is the whole app: markup, CSS and one IIFE script. No build step, no runtime dependencies, no framework. Google Fonts is the only external request.
 - JS style is ES5: `var`, `function`, `"use strict"`, string-built HTML via `*HTML()` helpers, then `render()`. Match it.
 - State: one `state` object (`defaultState()`), serialised as base64url JSON into the URL hash (`#s=...`) by `saveState()` with `history.replaceState`, debounced 250 ms. `loadState()` shallow-merges onto defaults so old links survive new fields. Any new state field needs a default and, if nested, a merge line in `loadState()`.
-- No localStorage or backend today. The URL is the save file and the share link. Planned: IndexedDB plus Google Drive sync (see below).
+- Persistence: IndexedDB (`openStore()`, memory fallback) holds the programme (`meta` key `programme`) and one session record per date (`sessions` store). The URL hash is still the share link and wins over the stored programme on load. Dev (`IS_DEV`: path has `/dev/` or localhost) uses database `531-planner-dev`.
+- Views: Plan / Log / Replay, chosen by `v=` in the hash (`setView()`). The logging view builds its rows from `daySections()`, whose slot keys tie logged entries to planned sets.
+- Pages deploys from `.github/workflows/pages.yml`: `main` at `/531/`, `dev` at `/531/dev/`.
 - Flow: `generateProgram()` -> `scheduleForWeek()` -> `buildDay()` -> `renderOutput()`. Templates are in `TEMPLATES`; weekly percentages in `WEEK_SCHEMES`; template-specific sets in `assistanceForTemplate()` and `buildDay()`.
 - Plate loading: `computeSessionPlates()` treats each side of the bar as a stack and picks combos to minimise plate moves across a session, respecting `state.plates` (count per side).
 - Print: separate `<style id="printStyles" media="print">`. `fitPrintToPage()` on `beforeprint` scales `--ps` so each week fits one A4 landscape page. Check print after layout changes.
@@ -28,7 +30,7 @@ npm install
 npm test
 ```
 
-`test/dom-test.js` loads `index.html` in jsdom and drives it through DOM events. Output is `PASS`/`FAIL` lines; exit code is non-zero only on runtime errors, so read the output for FAILs. Add tests in the same style for new behaviour.
+`test/dom-test.js` loads `index.html` in jsdom and drives it through DOM events. `test/logging-test.js` covers logging, replay, install and sync, using `fake-indexeddb` and fakes passed in via `window.PLANNER_FAKES`. Output is `PASS`/`FAIL` lines; exit code is non-zero only on runtime errors, so read the output for FAILs. Add tests in the same style for new behaviour.
 
 ## Repo housekeeping
 
@@ -36,4 +38,4 @@ npm test
 
 ## Planned work
 
-- Workout logging on the phone, programme planning on the laptop, both synced through Google Drive from the browser (no server). Design and open questions: `docs/logging-plan.md`.
+- Workout logging on the phone, programme planning on the laptop, both synced through Google Drive from the browser (no server). Design: `docs/logging-plan.md`. Build status: `docs/logging-progress.md`.

@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>531 Planner</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -170,6 +171,59 @@
   .dev-banner{background:var(--warn); color:#fff; font-family:var(--display); font-weight:600; letter-spacing:.12em; text-align:center; padding:3px 8px; font-size:12px;}
   .dev-banner[hidden]{display:none;}
 
+  /* top bar: switches between the planner, the logging view and replay */
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:10px; padding-top:14px; flex-wrap:wrap;}
+  .viewtabs{display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface);}
+  .viewtabs button{background:none; border:none; padding:9px 18px; font-weight:600; font-size:13px; color:var(--text-dim);}
+  .viewtabs button + button{border-left:1px solid var(--border);}
+  .viewtabs button.active{background:var(--accent); color:var(--accent-contrast);}
+  .sync-pill{font-size:12px; color:var(--text-dim); border:1px solid var(--border); border-radius:20px; padding:5px 12px; background:var(--surface);}
+  .sync-pill.ok{color:var(--good); border-color:var(--good);}
+  .sync-pill.bad{color:var(--warn); border-color:var(--warn);}
+  button.sync-pill{cursor:pointer;}
+  @media screen{
+    body[data-view="log"] .shell, body[data-view="replay"] .shell,
+    body[data-view="log"] .menu-toggle, body[data-view="replay"] .menu-toggle{display:none !important;}
+    body:not([data-view="log"]) #logView, body:not([data-view="replay"]) #replayView{display:none;}
+  }
+
+  /* logging view: built for one thumb at phone width */
+  .log-view, .replay-view{max-width:680px; margin:0 auto; padding-block:16px 80px;}
+  .replay-view{max-width:1440px;}
+  .log-head{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
+  .log-head input, .log-head select{font-size:15px; padding:9px 10px; flex:1 1 130px;}
+  .log-section{margin-bottom:16px;}
+  .log-section > h3{font-size:15px; margin:0 0 8px;}
+  .log-rows{display:flex; flex-direction:column; gap:6px;}
+  .log-row{background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:8px 10px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;}
+  .log-row.warmup{background:var(--surface-2);}
+  .log-row.done{border-color:var(--good);}
+  .log-row.changed{border-color:var(--accent);}
+  .log-row.skipped{opacity:.55;}
+  .log-plan{flex:1 1 150px; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:2px 8px;}
+  .log-plan .set-load{flex-basis:100%; font-size:15px;}
+  .log-plan .set-badges{justify-content:flex-start;}
+  .log-plan .log-status{flex-basis:100%;}
+  .log-ctrls{display:flex; gap:6px; align-items:center; margin-left:auto;}
+  .log-ctrls input{width:68px; height:44px; font-size:16px; text-align:center; padding:4px;}
+  .log-ctrls .log-reps{width:56px;}
+  .log-btn{height:44px; min-width:44px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); font-size:18px; font-weight:600; color:var(--text-dim);}
+  .log-btn.tick.on{background:var(--good); border-color:var(--good); color:#fff;}
+  .log-extra{flex-basis:100%; display:flex; gap:6px; flex-wrap:wrap;}
+  .log-extra input{flex:1 1 160px; font-size:15px; padding:9px 10px;}
+  .log-extra button{font-size:13px; padding:0 12px;}
+  .log-status{font-size:11.5px; color:var(--text-dim);}
+  .log-row.done .log-status{color:var(--good);}
+  .log-row.changed .log-status{color:var(--accent);}
+  .log-add{background:var(--surface); border:1px dashed var(--rule); border-radius:9px; padding:10px; display:flex; flex-wrap:wrap; gap:6px;}
+  .log-add input{font-size:16px; padding:9px 10px; height:44px;}
+  .log-add .ex-name{flex:1 1 100%;}
+  .log-add input[type=number]{flex:1 1 70px; width:70px;}
+  .log-add .btn{flex:1 1 90px; height:44px;}
+  .log-foot{display:flex; gap:8px; align-items:center; margin-top:18px;}
+  .log-foot .btn{height:48px; flex:1; font-size:15px;}
+  .log-msg{font-size:12.5px; color:var(--good);}
+
   @page{size:A4 landscape; margin:8mm;}
 </style>
 <!-- print layout. Kept as its own stylesheet so the page can briefly apply it on
@@ -177,7 +231,7 @@
      multiple of --ps, which that function sets so each week fills one page. -->
 <style id="printStyles" media="print">
   :root{--ps:1;}
-  .dev-banner, .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
+  .dev-banner, .topbar, #logView, #replayView, .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
   body{background:#fff; color:#000; font-size:calc(var(--ps) * 10px);}
   .app{max-width:none; padding:0;}
   .shell{display:block; padding:0;}
@@ -231,6 +285,14 @@
 
 <div class="dev-banner" id="devBanner" hidden>DEV: separate storage from the live site</div>
 <div class="app">
+  <nav class="topbar" id="topbar">
+    <div class="viewtabs" id="viewTabs">
+      <button data-view="plan">Plan</button>
+      <button data-view="log">Log</button>
+      <button data-view="replay">Replay</button>
+    </div>
+    <span class="sync-pill" id="syncPill">Local only</span>
+  </nav>
   <button class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="controls">☰ Settings</button>
   <div class="shell">
     <aside class="controls" id="controls">
@@ -341,6 +403,31 @@
       </footer>
     </main>
   </div>
+
+  <section class="log-view" id="logView">
+    <div class="log-head">
+      <input type="date" id="logDate" aria-label="Date">
+      <select id="logWeek" aria-label="Programme week"></select>
+      <select id="logDay" aria-label="Programme day"></select>
+    </div>
+    <div id="logBody"></div>
+    <div class="log-section">
+      <h3>Add exercise</h3>
+      <div class="log-add">
+        <input type="text" class="ex-name" id="addExName" list="exerciseNames" placeholder="Exercise" autocomplete="off">
+        <input type="number" id="addExWeight" inputmode="decimal" step="0.5" placeholder="Weight">
+        <input type="number" id="addExReps" inputmode="numeric" min="0" placeholder="Reps">
+        <button class="btn primary" id="addExBtn">Add set</button>
+      </div>
+      <datalist id="exerciseNames"></datalist>
+    </div>
+    <div class="log-foot">
+      <button class="btn primary" id="finishBtn">Finish session</button>
+      <span class="log-msg" id="logMsg"></span>
+    </div>
+  </section>
+
+  <section class="replay-view" id="replayView"></section>
 </div>
 
 <script>
@@ -442,13 +529,31 @@
     };
   }
 
+  // the hash holds "s=<state>" and, outside the planner, "v=<view>"
+  function hashParams(){
+    var out = {};
+    location.hash.replace(/^#/,"").split("&").forEach(function(part){
+      var i = part.indexOf("=");
+      if(i>0) out[part.slice(0,i)] = part.slice(i+1);
+    });
+    return out;
+  }
+  var VIEWS = ["plan","log","replay"];
+  var currentView = VIEWS.indexOf(hashParams().v)>=0 ? hashParams().v : "plan";
+
   var state = loadState();
 
+  function hashState(){
+    var s = hashParams().s;
+    if(!s) return null;
+    try{ return JSON.parse(fromBase64Url(s)); }catch(e){ return null; }
+  }
   function loadState(){
+    var parsed = hashState();
+    return parsed ? mergeState(parsed) : defaultState();
+  }
+  function mergeState(parsed){
     try{
-      var hash = location.hash.replace(/^#/,"");
-      if(hash.indexOf("s=")!==0) return defaultState();
-      var parsed = JSON.parse(fromBase64Url(hash.slice(2)));
       var d = defaultState();
       // shallow-merge to survive future field additions
       return Object.assign(d, parsed, {
@@ -468,12 +573,13 @@
       clearTimeout(saveTimer);
       saveTimer = setTimeout(function(){
         try{
-          var hash = "#s="+toBase64Url(JSON.stringify(state));
+          var hash = "#s="+toBase64Url(JSON.stringify(state)) + (currentView!=="plan" ? "&v="+currentView : "");
           // replaceState, not location.hash=, so every keystroke doesn't spam
           // browser history — the URL still updates live, just without a new
           // back-button entry per edit
           history.replaceState(null, "", hash);
         }catch(e){}
+        persistProgramme();
       }, 250);
     }catch(e){}
   }
@@ -926,6 +1032,8 @@
     renderControls();
     var program = generateProgram();
     renderOutput(program);
+    if(currentView==="log") renderLog();
+    if(currentView==="replay") renderReplay();
     saveState();
   }
 
@@ -1215,6 +1323,463 @@
     render();
   }
 
+  // ---------------- local store (IndexedDB) ----------------
+  // The working copy on this device: the programme, one record per training day
+  // (keyed by date) and a few settings. Logging writes here first, so it is
+  // instant and works with no signal. When IndexedDB is missing (jsdom, some
+  // private modes) a memory store stands in and the app still works, it just
+  // forgets on reload. window.PLANNER_FAKES lets tests swap in their own.
+  var DB_NAME = IS_DEV ? "531-planner-dev" : "531-planner";
+  function noop(){}
+  function clone(o){ return o==null ? o : JSON.parse(JSON.stringify(o)); }
+
+  function openStore(){
+    var fakes = window.PLANNER_FAKES || {};
+    if(fakes.store) return Promise.resolve(fakes.store);
+    if(!window.indexedDB) return Promise.resolve(memoryStore());
+    return new Promise(function(resolve){
+      var req;
+      try{ req = window.indexedDB.open(DB_NAME, 1); }catch(e){ resolve(memoryStore()); return; }
+      req.onupgradeneeded = function(){
+        var db = req.result;
+        db.createObjectStore("sessions", {keyPath:"date"});
+        db.createObjectStore("meta");
+      };
+      req.onsuccess = function(){ resolve(idbStore(req.result)); };
+      req.onerror = function(){ resolve(memoryStore()); };
+      req.onblocked = function(){ resolve(memoryStore()); };
+    });
+  }
+  function idbStore(db){
+    function run(name, mode, fn){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(name, mode);
+        var req = fn(tx.objectStore(name));
+        tx.oncomplete = function(){ resolve(req.result); };
+        tx.onerror = function(){ reject(tx.error); };
+        tx.onabort = function(){ reject(tx.error); };
+      });
+    }
+    return {
+      kind:"indexeddb",
+      allSessions:function(){ return run("sessions", "readonly", function(st){ return st.getAll(); }); },
+      putSession:function(rec){ return run("sessions", "readwrite", function(st){ return st.put(clone(rec)); }); },
+      getMeta:function(key){ return run("meta", "readonly", function(st){ return st.get(key); }); },
+      setMeta:function(key, value){ return run("meta", "readwrite", function(st){ return st.put(clone(value), key); }); },
+      deleteMeta:function(key){ return run("meta", "readwrite", function(st){ return st.delete(key); }); }
+    };
+  }
+  function memoryStore(){
+    var sessions = {}, meta = {};
+    return {
+      kind:"memory",
+      allSessions:function(){ return Promise.resolve(Object.keys(sessions).map(function(k){ return clone(sessions[k]); })); },
+      putSession:function(rec){ sessions[rec.date] = clone(rec); return Promise.resolve(); },
+      getMeta:function(key){ return Promise.resolve(clone(meta[key])); },
+      setMeta:function(key, value){ meta[key] = clone(value); return Promise.resolve(); },
+      deleteMeta:function(key){ delete meta[key]; return Promise.resolve(); }
+    };
+  }
+
+  var store = null, storeReady = false;
+  var sessions = {};            // date -> session record, the in-memory copy of the store
+  var savedProgrammeJSON = null; // last programme state written to the store
+
+  // the programme is saved alongside the sessions so the installed app, which
+  // opens without a share link in the URL, still has it
+  function persistProgramme(){
+    if(!storeReady) return;
+    var json = JSON.stringify(state);
+    if(json===savedProgrammeJSON) return;
+    savedProgrammeJSON = json;
+    store.setMeta("programme", {state:JSON.parse(json), modified:nowISO()}).catch(noop);
+    onProgrammeChanged();
+  }
+  function persistSession(rec){
+    if(store) store.putSession(rec).catch(noop);
+    onSessionChanged(rec.date);
+  }
+  // hooks for Drive sync (step 4); no-ops until then
+  function onProgrammeChanged(){}
+  function onSessionChanged(){}
+
+  // ---------------- sessions ----------------
+  function nowISO(){ return new Date().toISOString(); }
+  function isoDate(d){
+    function p(n){ return (n<10?"0":"")+n; }
+    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+  }
+  function newId(){
+    if(window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    return "e-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
+  }
+  function liveEntries(rec){ return rec ? rec.entries.filter(function(e){ return !e.deleted; }) : []; }
+  function sessionDates(){ return Object.keys(sessions).sort(); }
+
+  // which programme week/day a date is: its own session's if it has one,
+  // otherwise the day after the most recent earlier session, otherwise week 1 day 1
+  var logPicks = {}; // date -> {week, day} chosen before anything is logged
+  function programmeDayFor(date){
+    var rec = sessions[date];
+    if(rec && rec.programme && rec.programme.week) return {week:rec.programme.week, day:rec.programme.day};
+    if(logPicks[date]) return logPicks[date];
+    var weeks = includedWeeks();
+    if(!weeks.length) return {week:1, day:1};
+    var prior = sessionDates().filter(function(d){ return d<date && liveEntries(sessions[d]).length && sessions[d].programme; });
+    if(!prior.length) return {week:weeks[0], day:1};
+    var last = sessions[prior[prior.length-1]].programme;
+    var daysInWeek = scheduleForWeek(last.week).length;
+    if(last.day < daysInWeek && weeks.indexOf(last.week)>=0) return {week:last.week, day:last.day+1};
+    var wi = weeks.indexOf(last.week);
+    return {week:weeks[(wi+1) % weeks.length] || weeks[0], day:1};
+  }
+
+  function sessionFor(date){
+    if(!sessions[date]){
+      var pick = programmeDayFor(date);
+      sessions[date] = {date:date, programme:{title:"", week:pick.week, day:pick.day, state:null}, entries:[], updated:null, rev:0};
+    }
+    return sessions[date];
+  }
+  // every write snapshots the planner state, so replay shows the plan as it was that day
+  function touchSession(rec){
+    rec.programme.title = state.programTitle;
+    rec.programme.state = clone(state);
+    rec.updated = nowISO();
+    rec.rev = (rec.rev||0) + 1;
+    persistSession(rec);
+  }
+  function entryForSlot(rec, key){
+    var found = null;
+    liveEntries(rec).forEach(function(e){ if(e.planned && e.planned.key===key) found = e; });
+    return found;
+  }
+
+  // ---------------- the day's plan as a list of slots ----------------
+  // One slot per set to perform, in the order the planner shows them. A slot's
+  // key is stable for a given programme day, and is how a logged entry finds its
+  // planned set again (in the logging view and in replay).
+  function setLoadText(s){
+    if(s.accessory) return s.weighted ? (s.reps+' × '+fmtWeight(s.weight)+' '+unitLabel()) : (s.reps+' reps');
+    return String(s.reps)+(s.amrap?'+':'')+' × '+fmtWeight(s.weight)+' '+unitLabel();
+  }
+  function slotMeta(s){
+    var pct = s.pct ? Math.round(s.pct*100)+"%" : "";
+    var label = s.warmup ? "Warm-up" : s.isAssistance ? s.label : s.accessory ? "" : "Work";
+    return [pct, label].filter(function(x){ return x; }).join(" · ");
+  }
+  function daySections(day){
+    var sections = [];
+    function kindOf(s){ return s.warmup ? "warmup" : s.isAssistance ? "assistance" : "work"; }
+    function block(title, prefix, lift, list){
+      var counts = {};
+      var slots = expandSets(list).map(function(s, i){
+        var kind = kindOf(s);
+        counts[kind] = (counts[kind]||0) + 1;
+        return {key:prefix+":"+i, s:s, exercise:LIFT_META[lift].name,
+          planned:{key:prefix+":"+i, lift:lift, kind:kind, set:counts[kind], reps:s.reps, amrap:!!s.amrap, weight:s.weight}};
+      });
+      sections.push({title:title, slots:slots});
+    }
+    block(LIFT_META[day.lift].name, "main", day.lift, day.warmups.concat(day.workSets, day.assistance));
+    if(day.lightLift && day.lightBlock.length){
+      var lm = LIFT_META[day.lightLift];
+      var t = day.lightMode==="full" ? lm.name : lm.name+(day.lightMode==="fsl" ? " FSL" : " practice sets");
+      block(t, "light", day.lightLift, day.lightBlock);
+    }
+    day.accessories.forEach(function(ex){
+      var slots = [];
+      for(var i=0;i<(ex.sets||1);i++){
+        var s = {accessory:true, weighted:ex.weighted, weight:ex.weight, reps:ex.reps, plateCombo:ex.plateCombo, plateApprox:ex.plateApprox, belowBar:ex.belowBar};
+        var key = "acc:"+ex.id+":"+i;
+        slots.push({key:key, s:s, exercise:ex.name||"Exercise",
+          planned:{key:key, lift:day.lift, kind:"accessory", set:i+1, reps:ex.reps, amrap:false, weight:ex.weighted ? ex.weight : null}});
+      }
+      sections.push({title:ex.name||"Exercise", slots:slots});
+    });
+    return sections;
+  }
+  function programmeDay(program, week, dayNum){
+    var w = program.weeks.filter(function(x){ return x.week===week; })[0];
+    return w ? w.days[dayNum-1] || null : null;
+  }
+
+  // ---------------- logging view ----------------
+  var logDate = isoDate(new Date());
+  var openExtras = {};      // slot key -> extras row open
+  var draftWeights = {};    // date|key -> weight typed before the set is logged
+
+  function parseNum(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
+  function normName(n){ return String(n||"").trim().replace(/\s+/g," ").toLowerCase(); }
+
+  // every exercise name worth suggesting: the main lifts, the programme's
+  // accessories and anything logged before
+  function knownExerciseNames(){
+    var names = LIFTS.map(function(l){ return LIFT_META[l].name; });
+    LIFTS.forEach(function(l){ (state.accessories[l]||[]).forEach(function(ex){ if(ex.name) names.push(ex.name); }); });
+    sessionDates().forEach(function(d){ liveEntries(sessions[d]).forEach(function(e){ names.push(e.exercise); }); });
+    var seen = {}, out = [];
+    names.forEach(function(n){ var k = normName(n); if(k && !seen[k]){ seen[k] = true; out.push(String(n).trim().replace(/\s+/g," ")); } });
+    return out;
+  }
+  function canonicalName(n){
+    var k = normName(n);
+    var hit = knownExerciseNames().filter(function(x){ return normName(x)===k; })[0];
+    return hit || String(n).trim().replace(/\s+/g," ");
+  }
+
+  // an AMRAP set only counts as changed when it falls short of the prescribed reps
+  function repsDiffer(reps, planned){
+    if(!/^\s*\d+\s*$/.test(String(planned.reps))) return false; // a range like "10-15": any count is fine
+    var p = parseInt(planned.reps, 10);
+    return planned.amrap ? reps < p : reps !== p;
+  }
+  function logRowHTML(slot, rec){
+    var e = entryForSlot(rec, slot.key);
+    var s = slot.s;
+    var status = e ? e.status : null;
+    var changed = e && status!=="skipped" && ((e.weight!=null && slot.planned.weight!=null && Math.abs(e.weight-slot.planned.weight)>EPS) || (status==="reps" && repsDiffer(e.reps, slot.planned)));
+    var cls = "log-row" + (s.warmup ? " warmup" : "") + (status==="skipped" ? " skipped" : changed ? " changed" : status ? " done" : "");
+    var draft = draftWeights[logDate+"|"+slot.key];
+    var weight = e && e.weight!=null ? e.weight : draft!=null ? draft : slot.planned.weight;
+    var repsVal = e && status==="reps" ? e.reps : "";
+    var statusText = !e ? "" : status==="skipped" ? "Skipped" :
+      (status==="ticked" ? "Done" : e.reps+" reps") + (e.weight!=null ? " @ "+fmtWeight(e.weight)+" "+e.unit : "") + (e.note ? " · "+e.note : "");
+    var tick = (s.amrap && status!=="ticked") ? "" :
+      '<button class="log-btn tick'+(status==="ticked"?" on":"")+'" data-act="tick" aria-label="Done as planned">✓</button>';
+    var extras = "";
+    if(openExtras[slot.key]){
+      extras = '<div class="log-extra">'
+        + (e && status!=="skipped" ? '<input type="text" data-act="note" placeholder="Comment" value="'+escapeAttr(e.note||"")+'">' : "")
+        + '<button class="log-btn" data-act="skip">Skip</button>'
+        + (e ? '<button class="log-btn" data-act="clear">Clear</button>' : "")
+        + '</div>';
+    }
+    return '<div class="'+cls+'" data-slot="'+escapeAttr(slot.key)+'">'
+      + '<div class="log-plan"><span class="set-load">'+setLoadText(s)+'</span>'
+      + '<span class="set-meta">'+slotMeta(s)+'</span>'
+      + (s.accessory && !s.weighted ? "" : '<div class="set-badges">'+plateBadgesHTML(s)+'</div>')
+      + (statusText ? '<span class="log-status">'+escapeAttr(statusText)+'</span>' : "")
+      + '</div>'
+      + '<div class="log-ctrls">'
+      + '<input type="number" class="log-wt" data-act="weight" inputmode="decimal" step="0.5" aria-label="Weight" placeholder="'+(slot.planned.weight==null?"BW":"")+'" value="'+(weight==null?"":weight)+'">'
+      + '<input type="number" class="log-reps" data-act="reps" inputmode="numeric" min="0" aria-label="Reps done" placeholder="'+escapeAttr(String(s.reps))+(s.amrap?"+":"")+'" value="'+repsVal+'">'
+      + tick
+      + '<button class="log-btn" data-act="more" aria-label="More">⋯</button>'
+      + '</div>'
+      + extras
+      + '</div>';
+  }
+
+  function adhocRowHTML(e){
+    var text = e.reps+' × '+(e.weight!=null ? fmtWeight(e.weight)+' '+e.unit : 'BW');
+    return '<div class="log-row done" data-entry="'+escapeAttr(e.id)+'">'
+      + '<div class="log-plan"><span class="set-load">'+text+'</span>'
+      + (e.note ? '<span class="log-status">'+escapeAttr(e.note)+'</span>' : "")
+      + '</div>'
+      + '<div class="log-ctrls"><button class="log-btn" data-act="remove" aria-label="Remove">×</button></div>'
+      + '</div>';
+  }
+
+  var currentLogSlots = {};
+  function renderLog(){
+    var body = document.getElementById("logBody");
+    if(!storeReady){ body.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
+    var program = generateProgram();
+    var pick = programmeDayFor(logDate);
+    var rec = sessions[logDate];
+
+    document.getElementById("logDate").value = logDate;
+    var weekSel = document.getElementById("logWeek");
+    weekSel.innerHTML = program.weeks.map(function(w){
+      return '<option value="'+w.week+'"'+(w.week===pick.week?" selected":"")+'>'+WEEK_LABEL[w.week]+'</option>';
+    }).join("");
+    var wk = program.weeks.filter(function(w){ return w.week===pick.week; })[0];
+    var daySel = document.getElementById("logDay");
+    daySel.innerHTML = wk ? wk.days.map(function(d, i){
+      return '<option value="'+(i+1)+'"'+(i+1===pick.day?" selected":"")+'>Day '+d.dayLabel+': '+LIFT_META[d.lift].name+'</option>';
+    }).join("") : "";
+
+    var dl = document.getElementById("exerciseNames");
+    dl.innerHTML = knownExerciseNames().map(function(n){ return '<option value="'+escapeAttr(n)+'">'; }).join("");
+
+    var day = programmeDay(program, pick.week, pick.day);
+    currentLogSlots = {};
+    var html = "";
+    if(!day){
+      html = '<p class="empty-note">No programme day here. Pick a week and day, or turn the week on in the planner.</p>';
+    } else {
+      daySections(day).forEach(function(sec){
+        html += '<div class="log-section"><h3>'+escapeAttr(sec.title)+'</h3><div class="log-rows">'
+          + sec.slots.map(function(slot){ currentLogSlots[slot.key] = slot; return logRowHTML(slot, rec); }).join("")
+          + '</div></div>';
+      });
+    }
+    var adhoc = liveEntries(rec).filter(function(e){ return !e.planned; });
+    if(adhoc.length){
+      var groups = {}, order = [];
+      adhoc.forEach(function(e){ var k = normName(e.exercise); if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(e); });
+      html += order.map(function(k){
+        return '<div class="log-section"><h3>'+escapeAttr(groups[k][0].exercise)+'</h3><div class="log-rows">'+groups[k].map(adhocRowHTML).join("")+'</div></div>';
+      }).join("");
+    }
+    body.innerHTML = html;
+  }
+  // Updates one row in place rather than replacing it: a "change" fires on blur,
+  // just before the click that caused the blur, so swapping the row's buttons
+  // here would swallow that tap (type reps, then tap the tick or the ⋯).
+  function rerenderLogRow(key){
+    var el = document.querySelector('#logBody [data-slot="'+key.replace(/"/g,'\\"')+'"]');
+    var slot = currentLogSlots[key];
+    if(!el || !slot){ renderLog(); return; }
+    var tmp = document.createElement("div");
+    tmp.innerHTML = logRowHTML(slot, sessions[logDate]);
+    var fresh = tmp.firstChild;
+    el.className = fresh.className;
+    el.replaceChild(fresh.querySelector(".log-plan"), el.querySelector(".log-plan"));
+    var oc = el.querySelector(".log-ctrls"), nc = fresh.querySelector(".log-ctrls");
+    ["weight","reps"].forEach(function(a){
+      var o = oc.querySelector('[data-act="'+a+'"]'), n = nc.querySelector('[data-act="'+a+'"]');
+      if(o!==document.activeElement) o.value = n.value;
+      o.placeholder = n.placeholder;
+    });
+    var ot = oc.querySelector('[data-act="tick"]'), nt = nc.querySelector('[data-act="tick"]');
+    if(ot && nt) ot.className = nt.className;
+    else if(ot) oc.removeChild(ot);
+    else if(nt) oc.insertBefore(nt, oc.querySelector('[data-act="more"]'));
+    var oe = el.querySelector(".log-extra"), ne = fresh.querySelector(".log-extra");
+    if(oe && oe.contains(document.activeElement) && ne) return;
+    if(oe) el.removeChild(oe);
+    if(ne) el.appendChild(ne);
+  }
+
+  function upsertSlotEntry(slot, fields){
+    var rec = sessionFor(logDate);
+    var pick = programmeDayFor(logDate);
+    rec.programme.week = pick.week; rec.programme.day = pick.day;
+    var e = entryForSlot(rec, slot.key);
+    if(!e){
+      e = {id:newId(), t:null, exercise:slot.exercise, weight:slot.planned.weight, unit:state.unit, reps:null, status:null, planned:clone(slot.planned), note:""};
+      var draft = draftWeights[logDate+"|"+slot.key];
+      if(draft!==undefined) e.weight = draft;
+      rec.entries.push(e);
+    }
+    Object.keys(fields).forEach(function(k){ e[k] = fields[k]; });
+    e.t = nowISO();
+    touchSession(rec);
+  }
+  function clearSlotEntry(slot){
+    var rec = sessions[logDate];
+    var e = rec && entryForSlot(rec, slot.key);
+    if(!e) return;
+    e.deleted = true; e.t = nowISO();   // a tombstone, so a sync merge cannot bring it back
+    touchSession(rec);
+  }
+
+  function setView(v){
+    currentView = VIEWS.indexOf(v)>=0 ? v : "plan";
+    document.body.dataset.view = currentView;
+    document.querySelectorAll("#viewTabs [data-view]").forEach(function(b){ b.classList.toggle("active", b.dataset.view===currentView); });
+    if(currentView==="log") renderLog();
+    if(currentView==="replay") renderReplay();
+    saveState();
+  }
+  function renderReplay(){}
+
+  document.getElementById("viewTabs").addEventListener("click", function(e){
+    var b = e.target.closest("[data-view]");
+    if(b) setView(b.dataset.view);
+  });
+
+  document.getElementById("logDate").addEventListener("change", function(e){
+    if(e.target.value){ logDate = e.target.value; openExtras = {}; renderLog(); }
+  });
+  function pickLogDay(week, day){
+    var rec = sessions[logDate];
+    if(rec && rec.programme){
+      rec.programme.week = week; rec.programme.day = day;
+      touchSession(rec);
+    } else {
+      logPicks[logDate] = {week:week, day:day};
+    }
+    openExtras = {};
+    renderLog();
+  }
+  document.getElementById("logWeek").addEventListener("change", function(e){ pickLogDay(parseInt(e.target.value,10), 1); });
+  document.getElementById("logDay").addEventListener("change", function(e){ pickLogDay(programmeDayFor(logDate).week, parseInt(e.target.value,10)); });
+
+  document.getElementById("logBody").addEventListener("click", function(e){
+    var btn = e.target.closest("[data-act]");
+    if(!btn || btn.tagName!=="BUTTON") return;
+    var act = btn.dataset.act;
+    var entryRow = btn.closest("[data-entry]");
+    if(entryRow && act==="remove"){
+      var rec = sessions[logDate];
+      rec.entries.forEach(function(x){ if(x.id===entryRow.dataset.entry){ x.deleted = true; x.t = nowISO(); } });
+      touchSession(rec); renderLog(); return;
+    }
+    var row = btn.closest("[data-slot]");
+    var slot = row && currentLogSlots[row.dataset.slot];
+    if(!slot) return;
+    var existing = entryForSlot(sessions[logDate], slot.key);
+    if(act==="tick"){
+      if(existing && existing.status==="ticked") clearSlotEntry(slot);
+      else upsertSlotEntry(slot, {status:"ticked", reps:slot.planned.reps});
+    } else if(act==="more"){
+      openExtras[slot.key] = !openExtras[slot.key];
+    } else if(act==="skip"){
+      upsertSlotEntry(slot, {status:"skipped", reps:0});
+      openExtras[slot.key] = false;
+    } else if(act==="clear"){
+      clearSlotEntry(slot);
+      openExtras[slot.key] = false;
+    }
+    rerenderLogRow(slot.key);
+  });
+  document.getElementById("logBody").addEventListener("change", function(e){
+    var t = e.target, act = t.dataset.act;
+    var row = t.closest("[data-slot]");
+    var slot = row && currentLogSlots[row.dataset.slot];
+    if(!slot) return;
+    var existing = entryForSlot(sessions[logDate], slot.key);
+    if(act==="reps"){
+      var reps = parseNum(t.value);
+      if(reps===null){ if(existing && existing.status==="reps") clearSlotEntry(slot); }
+      else upsertSlotEntry(slot, {status:"reps", reps:Math.max(0, Math.round(reps))});
+    } else if(act==="weight"){
+      var w = parseNum(t.value);
+      draftWeights[logDate+"|"+slot.key] = w;
+      if(existing) upsertSlotEntry(slot, {weight:w});
+    } else if(act==="note"){
+      if(existing) upsertSlotEntry(slot, {note:t.value.trim()});
+    } else return;
+    rerenderLogRow(slot.key);
+  });
+
+  document.getElementById("addExBtn").addEventListener("click", function(){
+    var nameEl = document.getElementById("addExName");
+    var name = nameEl.value.trim();
+    var reps = parseNum(document.getElementById("addExReps").value);
+    if(!name || reps===null){ (name ? document.getElementById("addExReps") : nameEl).focus(); return; }
+    var rec = sessionFor(logDate);
+    var pick = programmeDayFor(logDate);
+    rec.programme.week = pick.week; rec.programme.day = pick.day;
+    rec.entries.push({id:newId(), t:nowISO(), exercise:canonicalName(name), weight:parseNum(document.getElementById("addExWeight").value),
+      unit:state.unit, reps:Math.max(0, Math.round(reps)), status:"reps", planned:null, note:""});
+    touchSession(rec);
+    // the form keeps its values, so the next set of the same thing is one more tap
+    renderLog();
+  });
+
+  document.getElementById("finishBtn").addEventListener("click", function(){
+    var msg = document.getElementById("logMsg");
+    var n = liveEntries(sessions[logDate]).length;
+    msg.textContent = n ? "Saved "+n+" set"+(n===1?"":"s")+"." : "Nothing logged yet.";
+    onSessionFinished();
+    setTimeout(function(){ msg.textContent = ""; }, 3000);
+  });
+  function onSessionFinished(){}
+
   // ---------------- copy / print ----------------
   function buildPlainText(program){
     var lines = [];
@@ -1336,9 +1901,32 @@
   // only fires on an actual navigation — e.g. pasting a different shared link into
   // this same tab, or using back/forward — and is safe from feedback loops
   window.addEventListener("hashchange", function(){
-    state = loadState();
+    if(hashState()) state = loadState();
+    var v = hashParams().v;
     render();
+    setView(VIEWS.indexOf(v)>=0 ? v : "plan");
   });
   render();
+  setView(currentView);
+
+  // the store opens asynchronously; until then the page shows the share link's
+  // programme (or the defaults). A share link in the URL wins over the saved
+  // programme; without one, the saved programme is loaded.
+  var storeLoaded = openStore().then(function(st){
+    store = st;
+    return Promise.all([st.getMeta("programme"), st.allSessions()]);
+  }).then(function(res){
+    var saved = res[0];
+    (res[1]||[]).forEach(function(rec){ sessions[rec.date] = rec; });
+    if(saved && saved.state){
+      savedProgrammeJSON = JSON.stringify(saved.state);
+      if(!hashState()) state = mergeState(saved.state);
+    }
+    storeReady = true;
+    render();
+    setView(currentView);
+  }).catch(function(){
+    store = memoryStore(); storeReady = true; render(); setView(currentView);
+  });
 })();
 </script>

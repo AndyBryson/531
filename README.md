@@ -8,7 +8,9 @@ Independent build — not affiliated with Jim Wendler or any 5/3/1 app.
 
 ## Use it
 
-Open `index.html` in a browser, or use the link above. State is encoded in the URL itself, so the address bar is always a shareable link to the exact program on screen.
+Open `index.html` in a browser, or use the link above. The planner state is encoded in the URL, so the address bar is always a shareable link to the exact programme on screen. It is also saved in the browser along with your workout log.
+
+For local development serve the folder (`python3 -m http.server 8000`) rather than opening the file, so IndexedDB and the service worker work.
 
 ## Features
 
@@ -18,6 +20,9 @@ Open `index.html` in a browser, or use the link above. State is encoded in the U
 - Custom accessory exercises per lift, with optional weight and plate loading
 - 4-day or 3-day/week scheduling with reorderable lift order
 - Print layout: A4 landscape, one week per page, a day per column
+- Workout log (Log tab): the day's plan as a checklist. Per set: one tap ticks it as prescribed, a reps field logs a different count (AMRAP sets go straight to reps), the weight is editable, and the ⋯ button adds a comment or skips the set. Log any other exercise with "Add set" (names autocomplete from the main lifts, your accessories and anything logged before). Suggests the next programme day after the last session.
+- Saved on the device: the programme and logs are kept in the browser's IndexedDB, so the app opens with your programme even without a share link. A share link in the URL still wins.
+- Dev build at https://andybryson.github.io/531/dev/ (the `dev` branch), with its own storage and a DEV banner
 
 ### 5/3/1 for Beginners
 
