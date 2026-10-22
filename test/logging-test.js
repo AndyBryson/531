@@ -178,6 +178,8 @@ async function startLog(dom) {
   const b = dom.doc.getElementById('startBtn');
   if (b && !dom.doc.getElementById('logStart').hidden) { b.click(); await wait(20); }
 }
+// a replay day card by its programme day number (cards are in the order the days were done)
+const cardFor = (root, n) => Array.from(root.querySelectorAll('.day-card')).find(c => c.querySelector('.day-idx').textContent.startsWith('Day ' + n + ' '));
 const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + act + '"]');
 
 (async () => {
@@ -389,8 +391,8 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('warm-ups not logged on a logged day show as missed', mainRows[0].classList.contains('missed'));
     log('ad hoc exercise listed under its day after the programme sets', /Cossack squat \(extra\)/.test(day1.textContent) && /8 × 24 kg/.test(day1.textContent));
     log('day card says which date it was logged', day1.querySelector('.day-idx').textContent.includes('Day 1'));
-    log('a day with no session shows the plan only', cards[1].classList.contains('unlogged') && /not logged/.test(cards[1].textContent) && !cards[1].querySelector('.missed, .done'));
-    log('a week logged across two calendar weeks is drawn together', !cards[2].classList.contains('unlogged') && cards[2].querySelectorAll('.replay-row.done').length === 1 && !cards[0].classList.contains('unlogged'));
+    log('a day with no session shows the plan only', cardFor(view, 2).classList.contains('unlogged') && /not logged/.test(cardFor(view, 2).textContent) && !cardFor(view, 2).querySelector('.missed, .done'));
+    log('a week logged across two calendar weeks is drawn together', !cardFor(view, 3).classList.contains('unlogged') && cardFor(view, 3).querySelectorAll('.replay-row.done').length === 1 && !cards[0].classList.contains('unlogged'));
     setValue(dom, weekSel(), '2');
     await wait(30);
     log('picking another week of the plan redraws it (Cycle 3, Week 2)', /Cycle 3 · Week 2/.test(doc.querySelector('#replayView .replay-title').textContent) && doc.querySelectorAll('#replayView .day-card')[0].querySelectorAll('.replay-row.done').length === 1);
@@ -398,7 +400,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     await wait(30);
     const v2 = doc.getElementById('replayView');
     log('picking another plan shows its logged week (Cycle 2, Week 3)', /Cycle 2 · Week 3/.test(v2.querySelector('.replay-title').textContent));
-    const dl = v2.querySelectorAll('.day-card')[1];
+    const dl = cardFor(v2, 2);
     log('week 3 day 2 shows the logged deadlift set as changed (1 rep at 140, plan 5)', /Deadlift/.test(dl.querySelector('h3').textContent) && dl.querySelectorAll('.replay-row.done, .replay-row.changed').length === 1);
     log('replay never changes the current programme', doc.getElementById('programDate').value === TODAY && doc.getElementById('programTitle').value === '' && /OHP 55 /.test(doc.getElementById('programSub').textContent));
     done(dom);
@@ -1076,6 +1078,24 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     await wait(30);
     log('starting on another date replaces the running session', (await idbGet(idb, '531-planner', 'meta', 'activeSession')).date === daysFrom(TODAY, 1));
     done(third);
+  }
+
+
+  // ---------------- replay: days in the order they were done ----------------
+  {
+    const idb = new IDBFactory();
+    const st = { programTitle: '2026-10-05 - Order', template: 'standard' };
+    const tick = (id, lift, w) => ({ id, t: 'x', exercise: lift, weight: w, unit: 'kg', reps: 5, status: 'ticked', planned: { key: 'main:3', lift, kind: 'work', set: 1, reps: 5, amrap: false, weight: w } });
+    const d0 = daysFrom(TODAY, -10);
+    await idbPut(idb, '531-planner', 'sessions', [
+      { date: d0, programme: { title: '2026-10-05 - Order', week: 1, day: 3, state: st }, updated: 'x', rev: 1, entries: [Object.assign(tick('a', 'Bench Press', 50), { week: 1, day: 3 })] },
+      { date: daysFrom(d0, 2), programme: { title: '2026-10-05 - Order', week: 1, day: 1, state: st }, updated: 'x', rev: 1, entries: [Object.assign(tick('b', 'Overhead Press', 35), { week: 1, day: 1 })] },
+    ]);
+    const R = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    await wait(200);
+    const order = Array.from(R.doc.querySelectorAll('#replayView .day-card .day-idx')).map(x => x.textContent.split(' ·')[0]);
+    log('replay shows days in the order they were done, then the rest in plan order', JSON.stringify(order) === '["Day 3","Day 1","Day 2","Day 4"]');
+    done(R);
   }
 
   console.log('\nFINAL total runtime errors:', totalErrors);

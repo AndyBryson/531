@@ -2148,15 +2148,25 @@
       state.weeks[w] = true; // the week was logged, so draw it even if since hidden
       var program = generateProgram();
       var wk = program.weeks.filter(function(x){ return x.week===w; })[0];
-      var cards = wk ? wk.days.map(function(day, i){
-        return replayDayHTML(day, i+1, group.filter(function(r){ return r.programme.day===i+1; }));
-      }).join("") : "";
+      // days in the order they were done (by the date first logged), then any
+      // day not logged yet in plan order, so a week done as 3, 1, 2, 4 reads that way
+      var dayCards = [];
+      if(wk) wk.days.forEach(function(day, i){
+        var recs = group.filter(function(r){ return r.programme.day===i+1; });
+        dayCards.push({first:recs.length ? recs[0].date : null, idx:i, html:replayDayHTML(day, i+1, recs)});
+      });
       // sessions whose day no longer exists in the snapshot (e.g. 4 days became 3)
       group.filter(function(r){ return !wk || r.programme.day > wk.days.length; }).forEach(function(r){
-        cards += '<div class="day-card"><div class="day-head"><h3>Day '+r.programme.day+'</h3><span class="day-idx">'+fmtDay(r.date)+'</span></div><div class="day-body">'
+        dayCards.push({first:r.date, idx:r.programme.day-1, html:'<div class="day-card"><div class="day-head"><h3>Day '+r.programme.day+'</h3><span class="day-idx">'+fmtDay(r.date)+'</span></div><div class="day-body">'
           + liveEntries(r).map(function(e){ return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">'+escapeAttr(e.exercise)+': '+escapeAttr(resultText(e))+'</span></div></div>'; }).join("")
-          + '</div></div>';
+          + '</div></div>'});
       });
+      dayCards.sort(function(a, b){
+        if(a.first && b.first) return a.first < b.first ? -1 : a.first > b.first ? 1 : a.idx - b.idx;
+        if(a.first || b.first) return a.first ? -1 : 1;
+        return a.idx - b.idx;
+      });
+      var cards = dayCards.map(function(c){ return c.html; }).join("");
       return '<h2 class="replay-title">'+escapeAttr(plan.name || "Untitled plan")+' · '+WEEK_LABEL[w]+'</h2>'
         + '<p class="program-sub">TM: OHP '+fmtWeight(program.tms.ohp)+' · Bench '+fmtWeight(program.tms.bench)+' · Squat '+fmtWeight(program.tms.squat)+' · Deadlift '+fmtWeight(program.tms.deadlift)+' '+unitLabel()+'</p>'
         + '<div class="replay-cards">'+cards+'</div>';

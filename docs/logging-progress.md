@@ -81,6 +81,10 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Finish session ends it (pickers back, "Session saved: N sets", sync push as before). Change ends it without syncing, after a confirm if sets are logged; the sets stay with their day. Starting on another date simply replaces any running session.
 - The old Finish button at the bottom of the page is gone; it lives in the bar.
 
+### Replay in the order done (22 Oct)
+- Replay's day cards are sorted by the date each day was first logged; days not logged yet follow in plan order. A week done as 3, 1, 2, 4 reads that way.
+- Logging days out of order already works (sets carry their own week and day). The Log tab's suggestion is still "the day after the last one logged", so after an out-of-order day it may need picking by hand.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 
