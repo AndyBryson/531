@@ -710,6 +710,76 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(M);
   }
 
+
+  // ---------------- "+ set": add sets to any block ----------------
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    const doc = dom.doc;
+    await wait(150);
+    const section = title => Array.from(doc.querySelectorAll('#logBody .log-section')).find(sec => sec.querySelector('h3').textContent === title);
+    const addSet = title => section(title).querySelector('[data-act="addset"]');
+    log('every block in the log has a + set button', Array.from(doc.querySelectorAll('#logBody .log-section')).every(sec => !!sec.querySelector('[data-act="addset"]')));
+
+    // pull-up style split: 3 x 10-15 planned, done as sets of 5
+    setValue(dom, doc.querySelector('#logBody [data-slot="acc:ex1:0"] [data-act="reps"]'), '5');
+    await wait(20);
+    for (let i = 0; i < 5; i++) { addSet('Dip').click(); await wait(10); }
+    let added = section('Dip').querySelectorAll('.log-row.added');
+    log('+ set adds a set to that block, copying the last one (5 reps, bodyweight)', added.length === 5 && Array.from(added).every(r => r.querySelector('[data-act="ereps"]').value === '5' && r.querySelector('[data-act="eweight"]').value === ''));
+    log('added sets sit under their block, before its + set button', section('Dip').querySelector('.log-rows').lastElementChild.dataset.act === 'addset');
+    setValue(dom, added[4].querySelector('[data-act="ereps"]'), '6');
+    await wait(20);
+    added[0].querySelector('[data-act="remove"]').click();
+    await wait(30);
+    let rec = await idbGet(idb, '531-planner', 'sessions', TODAY);
+    const extras = rec.entries.filter(e => e.planned && e.planned.key === 'acc:ex1:extra');
+    log('added sets are saved, editable and removable', extras.filter(e => !e.deleted).length === 4 && extras.filter(e => !e.deleted).some(e => e.reps === 6) && extras.some(e => e.deleted) && extras.every(e => e.exercise === 'Dip' && e.planned.kind === 'extra'));
+
+    // main lift block: copies the last logged set's weight and reps
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(20);
+    addSet('Overhead Press').click();
+    await wait(20);
+    const mainAdded = section('Overhead Press').querySelector('.log-row.added');
+    const tickedWeight = rowBy(doc, 'main:3').querySelector('[data-act="weight"]').value;
+    log('+ set on the main lift copies the last logged set', !!mainAdded && mainAdded.querySelector('[data-act="ereps"]').value === '5' && mainAdded.querySelector('[data-act="eweight"]').value === tickedWeight);
+
+    // nothing logged yet in a block: copies its last planned set
+    const before = section('Overhead Press').querySelectorAll('.log-row.added').length;
+    // (main already has a logged set; use a fresh date for an empty block)
+    const tomorrow = daysFrom(TODAY, 1);
+    setValue(dom, doc.getElementById('logDate'), tomorrow);
+    await wait(30);
+    const firstTitle = doc.querySelector('#logBody .log-section h3').textContent;
+    addSet(firstTitle).click();
+    await wait(20);
+    const lastPlanned = Array.from(section(firstTitle).querySelectorAll('[data-slot]')).pop();
+    const fresh = section(firstTitle).querySelector('.log-row.added');
+    log('+ set on an empty block copies its last planned set', before === 1 && !!fresh && fresh.querySelector('[data-act="eweight"]').value === lastPlanned.querySelector('[data-act="weight"]').value);
+    setValue(dom, doc.getElementById('logDate'), TODAY);
+    await wait(30);
+
+    // ad hoc exercise block gets + set too
+    setValue(dom, doc.getElementById('addExName'), 'Pull up', 'input');
+    doc.getElementById('addExWeight').value = '';
+    doc.getElementById('addExReps').value = '5';
+    doc.getElementById('addExBtn').click();
+    await wait(20);
+    addSet('Pull up').click();
+    await wait(20);
+    log('an added exercise has + set as well', section('Pull up').querySelectorAll('.log-row.added').length === 2);
+    done(dom);
+
+    const again = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    await wait(200);
+    const card = again.doc.querySelectorAll('#replayView .day-card')[0];
+    const dipList = Array.from(card.querySelectorAll('.section-label')).find(l => l.textContent === 'Dip').nextElementSibling;
+    const dipAdded = Array.from(dipList.querySelectorAll('.replay-row')).filter(r => /added set/.test(r.textContent));
+    log('replay lists added sets under their block with what was done', dipAdded.length === 4 && dipAdded.some(r => /6 × BW/.test(r.textContent)));
+    done(again);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

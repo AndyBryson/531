@@ -49,6 +49,11 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - The service worker fetches the page with `cache: "no-cache"`: GitHub Pages sends `max-age=600`, so a plain network-first fetch could serve a page up to 10 minutes old after a deploy (seen in Chrome on 22 Oct).
 - Set up in Andy's Chrome on 22 Oct: the "2026-10-05" programme (partner FSL) is in the dev Drive folder `531 Planner (dev)`. An earlier test folder with only defaults was renamed `531 Planner (dev) (old 2026-10-22)` by Start from scratch.
 
+### "+ set" on every block (Andy's request, 22 Oct)
+- Every section in the Log tab (main lift, light/FSL block, each accessory, each ad hoc exercise) ends with a "+ set" button. It logs one more set copying the last non-skipped set logged in that block, or the block's last planned set when nothing is logged yet.
+- Added sets are entries with `planned: {key: "<section>:extra", kind: "extra", ...}` (sections are `main`, `light`, `acc:<exercise id>`); on ad hoc blocks they are plain `planned: null` entries of that exercise. Weight and reps stay editable in place; × removes (tombstone).
+- Replay lists added sets under their block as "added set" with the result. No volume-based judging: Andy only wants planned vs done side by side.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

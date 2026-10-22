@@ -223,6 +223,9 @@
   .log-status{font-size:11.5px; color:var(--text-dim);}
   .log-row.done .log-status{color:var(--good);}
   .log-row.changed .log-status{color:var(--accent);}
+  .log-addset{align-self:flex-start; background:none; border:1px dashed var(--rule); border-radius:8px; color:var(--text-dim); font-size:13px; font-weight:600; padding:0 16px; height:40px;}
+  .log-addset:hover{border-color:var(--accent); color:var(--accent);}
+  .log-row.added .set-meta{color:var(--good);}
   .log-add{background:var(--surface); border:1px dashed var(--rule); border-radius:9px; padding:10px; display:flex; flex-wrap:wrap; gap:6px;}
   .log-add input{font-size:16px; padding:9px 10px; height:44px;}
   .log-add .ex-name{flex:1 1 100%;}
@@ -1518,7 +1521,7 @@
         return {key:prefix+":"+i, s:s, exercise:LIFT_META[lift].name,
           planned:{key:prefix+":"+i, lift:lift, kind:kind, set:counts[kind], reps:s.reps, amrap:!!s.amrap, weight:s.weight}};
       });
-      sections.push({title:title, slots:slots});
+      sections.push({key:prefix, title:title, lift:lift, exercise:LIFT_META[lift].name, slots:slots});
     }
     block(LIFT_META[day.lift].name, "main", day.lift, day.warmups.concat(day.workSets, day.assistance));
     if(day.lightLift && day.lightBlock.length){
@@ -1534,7 +1537,7 @@
         slots.push({key:key, s:s, exercise:ex.name||"Exercise",
           planned:{key:key, lift:day.lift, kind:"accessory", set:i+1, reps:ex.reps, amrap:false, weight:ex.weighted ? ex.weight : null}});
       }
-      sections.push({title:ex.name||"Exercise", slots:slots});
+      sections.push({key:"acc:"+ex.id, title:ex.name||"Exercise", lift:day.lift, exercise:ex.name||"Exercise", slots:slots});
     });
     return sections;
   }
@@ -1616,17 +1619,27 @@
       + '</div>';
   }
 
-  function adhocRowHTML(e){
-    var text = e.reps+' × '+(e.weight!=null ? fmtWeight(e.weight)+' '+e.unit : 'BW');
-    return '<div class="log-row done" data-entry="'+escapeAttr(e.id)+'">'
-      + '<div class="log-plan"><span class="set-load">'+text+'</span>'
+  // a set you added yourself (with "+ set" or "Add set"): weight and reps stay
+  // editable in place, × removes it
+  function addedRowHTML(e){
+    return '<div class="log-row done added" data-entry="'+escapeAttr(e.id)+'">'
+      + '<div class="log-plan"><span class="set-meta">Added set</span>'
       + (e.note ? '<span class="log-status">'+escapeAttr(e.note)+'</span>' : "")
       + '</div>'
-      + '<div class="log-ctrls"><button class="log-btn" data-act="remove" aria-label="Remove">×</button></div>'
-      + '</div>';
+      + '<div class="log-ctrls">'
+      + '<input type="number" class="log-wt" data-act="eweight" inputmode="decimal" step="0.5" aria-label="Weight" placeholder="BW" value="'+(e.weight==null?"":e.weight)+'">'
+      + '<input type="number" class="log-reps" data-act="ereps" inputmode="numeric" min="0" aria-label="Reps" value="'+(e.reps==null?"":e.reps)+'">'
+      + '<button class="log-btn" data-act="remove" aria-label="Remove">×</button>'
+      + '</div></div>';
+  }
+  function addSetHTML(sectionKey){
+    return '<button class="log-addset" data-act="addset" data-section="'+escapeAttr(sectionKey)+'">+ set</button>';
+  }
+  function extraEntries(rec, sectionKey){
+    return liveEntries(rec).filter(function(e){ return e.planned && e.planned.key===sectionKey+":extra"; });
   }
 
-  var currentLogSlots = {};
+  var currentLogSlots = {}, currentLogSections = {};
   function renderLog(){
     var body = document.getElementById("logBody");
     if(!storeReady){ body.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
@@ -1650,13 +1663,17 @@
 
     var day = programmeDay(program, pick.week, pick.day);
     currentLogSlots = {};
+    currentLogSections = {};
     var html = "";
     if(!day){
       html = '<p class="empty-note">No programme day here. Pick a week and day, or turn the week on in the planner.</p>';
     } else {
       daySections(day).forEach(function(sec){
+        currentLogSections[sec.key] = sec;
         html += '<div class="log-section"><h3>'+escapeAttr(sec.title)+'</h3><div class="log-rows">'
           + sec.slots.map(function(slot){ currentLogSlots[slot.key] = slot; return logRowHTML(slot, rec); }).join("")
+          + extraEntries(rec, sec.key).map(addedRowHTML).join("")
+          + addSetHTML(sec.key)
           + '</div></div>';
       });
     }
@@ -1665,7 +1682,7 @@
       var groups = {}, order = [];
       adhoc.forEach(function(e){ var k = normName(e.exercise); if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(e); });
       html += order.map(function(k){
-        return '<div class="log-section"><h3>'+escapeAttr(groups[k][0].exercise)+'</h3><div class="log-rows">'+groups[k].map(adhocRowHTML).join("")+'</div></div>';
+        return '<div class="log-section"><h3>'+escapeAttr(groups[k][0].exercise)+'</h3><div class="log-rows">'+groups[k].map(addedRowHTML).join("")+addSetHTML("adhoc:"+k)+'</div></div>';
       }).join("");
     }
     body.innerHTML = html;
@@ -1762,6 +1779,7 @@
       rec.entries.forEach(function(x){ if(x.id===entryRow.dataset.entry){ x.deleted = true; x.t = nowISO(); } });
       touchSession(rec); renderLog(); return;
     }
+    if(act==="addset"){ addSetTo(btn.dataset.section); return; }
     var row = btn.closest("[data-slot]");
     var slot = row && currentLogSlots[row.dataset.slot];
     if(!slot) return;
@@ -1780,8 +1798,49 @@
     }
     rerenderLogRow(slot.key);
   });
+  // "+ set": one more set of that block's exercise, a copy of the last set
+  // logged there (or of its last planned set when nothing is logged yet)
+  function addSetTo(sectionKey){
+    var rec = sessionFor(logDate);
+    var pick = programmeDayFor(logDate);
+    rec.programme.week = pick.week; rec.programme.day = pick.day;
+    var live = liveEntries(rec), last = null, entry;
+    if(sectionKey.indexOf("adhoc:")===0){
+      var name = sectionKey.slice(6);
+      live.forEach(function(e){ if(!e.planned && normName(e.exercise)===name) last = e; });
+      if(!last) return;
+      entry = {exercise:last.exercise, planned:null};
+    } else {
+      var sec = currentLogSections[sectionKey];
+      if(!sec) return;
+      live.forEach(function(e){ if(e.planned && e.status!=="skipped" && (e.planned.key===sectionKey+":extra" || e.planned.key.indexOf(sectionKey+":")===0)) last = e; });
+      var lastSlot = sec.slots[sec.slots.length-1];
+      if(!last) last = {weight:lastSlot.planned.weight, reps:parseNum(lastSlot.planned.reps), unit:state.unit, note:""};
+      entry = {exercise:sec.exercise, planned:{key:sectionKey+":extra", lift:sec.lift, kind:"extra", set:null, reps:null, amrap:false, weight:null}};
+    }
+    entry.id = newId(); entry.t = nowISO();
+    entry.weight = last.weight==null ? null : last.weight;
+    entry.unit = last.unit || state.unit;
+    entry.reps = last.reps==null ? 0 : last.reps;
+    entry.status = "reps"; entry.note = "";
+    rec.entries.push(entry);
+    touchSession(rec);
+    renderLog();
+  }
+
   document.getElementById("logBody").addEventListener("change", function(e){
     var t = e.target, act = t.dataset.act;
+    if(act==="eweight" || act==="ereps"){
+      var erow = t.closest("[data-entry]"), rec = sessions[logDate];
+      var ent = rec && rec.entries.filter(function(x){ return x.id===erow.dataset.entry; })[0];
+      if(!ent) return;
+      var v = parseNum(t.value);
+      if(act==="eweight") ent.weight = v;
+      else ent.reps = v===null ? 0 : Math.max(0, Math.round(v));
+      ent.t = nowISO();
+      touchSession(rec);
+      return;
+    }
     var row = t.closest("[data-slot]");
     var slot = row && currentLogSlots[row.dataset.slot];
     if(!slot) return;
@@ -1882,6 +1941,9 @@
       // like the planner, the main lift's list has no label: the card heading names it
       return '<div>'+(i ? '<div class="section-label">'+escapeAttr(sec.title)+'</div>' : "")+'<div class="set-list">'
         + sec.slots.map(function(slot){ return replayRowHTML(slot, rec); }).join("")
+        + (rec ? extraEntries(rec, sec.key) : []).map(function(e){
+          return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">added set</span></div><div class="replay-result">'+escapeAttr(resultText(e))+'</div></div>';
+        }).join("")
         + '</div></div>';
     }).join("");
     var adhoc = liveEntries(rec).filter(function(e){ return !e.planned; });
