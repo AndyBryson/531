@@ -1508,11 +1508,11 @@
 
   // which programme week/day a date is: its own session's if it has one,
   // otherwise the day after the most recent earlier session, otherwise week 1 day 1
-  var logPicks = {}; // date -> {week, day} chosen before anything is logged
+  var logPicks = {}; // date -> {week, day} picked in the log view
   function programmeDayFor(date){
     var rec = sessions[date];
-    if(rec && rec.programme && rec.programme.week) return {week:rec.programme.week, day:rec.programme.day};
     if(logPicks[date]) return logPicks[date];
+    if(rec && rec.programme && rec.programme.week) return {week:rec.programme.week, day:rec.programme.day};
     var weeks = includedWeeks();
     if(!weeks.length) return {week:1, day:1};
     var prior = sessionDates().filter(function(d){ return d<date && liveEntries(sessions[d]).length && sessions[d].programme; });
@@ -1539,6 +1539,25 @@
     rec.rev = (rec.rev||0) + 1;
     persistSession(rec);
   }
+  // Each entry records the programme week and day it was logged against, so one
+  // date can hold more than one programme day (OHP, then deadlift). Entries from
+  // before this fall back to their session's day.
+  function entryDay(e, rec){
+    var p = rec.programme || {};
+    return {week:e.week || p.week || 1, day:e.day || p.day || 1};
+  }
+  // the part of a session that belongs to one programme day (same entry objects)
+  function dayView(rec, wd){
+    if(!rec) return null;
+    return {date:rec.date, programme:rec.programme, entries:rec.entries.filter(function(e){
+      var d = entryDay(e, rec);
+      return d.week===wd.week && d.day===wd.day;
+    })};
+  }
+  function logRec(){ return dayView(sessions[logDate], programmeDayFor(logDate)); }
+  function draftKey(slot){ var p = programmeDayFor(logDate); return logDate+"|"+p.week+"|"+p.day+"|"+slot.key; }
+  function stampDay(e){ var p = programmeDayFor(logDate); e.week = p.week; e.day = p.day; return e; }
+
   function entryForSlot(rec, key){
     var found = null;
     liveEntries(rec).forEach(function(e){ if(e.planned && e.planned.key===key) found = e; });
@@ -1597,8 +1616,8 @@
   // ---------------- logging view ----------------
   var logDate = isoDate(new Date());
   var openExtras = {};      // slot key -> extras row open
-  var draftWeights = {};    // date|key -> weight typed before the set is logged
-  var draftNotes = {};      // date|key -> comment typed before the set is logged
+  var draftWeights = {};    // draftKey -> weight typed before the set is logged
+  var draftNotes = {};      // draftKey -> comment typed before the set is logged
   var openEntryNotes = {};  // entry id -> comment field open on an added set
 
   function parseNum(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
@@ -1639,7 +1658,7 @@
     var status = e ? e.status : null;
     var changed = entryChanged(e, slot);
     var cls = "log-row" + (s.warmup ? " warmup" : "") + (status==="skipped" ? " skipped" : changed ? " changed" : status ? " done" : "");
-    var draft = draftWeights[logDate+"|"+slot.key];
+    var draft = draftWeights[draftKey(slot)];
     var weight = e && e.weight!=null ? e.weight : draft!=null ? draft : slot.planned.weight;
     // a ticked set can carry reps typed before the tick; show them unless they are the plan's
     var tickedAsPlanned = status==="ticked" && String(e.reps)===String(slot.planned.reps);
@@ -1651,7 +1670,7 @@
     var extras = "";
     if(openExtras[slot.key]){
       extras = '<div class="log-extra">'
-        + '<input type="text" data-act="note" placeholder="'+(e ? "Comment" : "Comment (saved when you log the set)")+'" value="'+escapeAttr(e ? e.note||"" : draftNotes[logDate+"|"+slot.key]||"")+'">'
+        + '<input type="text" data-act="note" placeholder="'+(e ? "Comment" : "Comment (saved when you log the set)")+'" value="'+escapeAttr(e ? e.note||"" : draftNotes[draftKey(slot)]||"")+'">'
         + '<button class="log-btn" data-act="skip">Skip</button>'
         + (e ? '<button class="log-btn" data-act="clear">Clear</button>' : "")
         + '</div>';
@@ -1701,7 +1720,7 @@
     if(!storeReady){ body.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
     var program = generateProgram();
     var pick = programmeDayFor(logDate);
-    var rec = sessions[logDate];
+    var rec = logRec();
 
     document.getElementById("logDate").value = logDate;
     var weekSel = document.getElementById("logWeek");
@@ -1751,7 +1770,7 @@
     var slot = currentLogSlots[key];
     if(!el || !slot){ renderLog(); return; }
     var tmp = document.createElement("div");
-    tmp.innerHTML = logRowHTML(slot, sessions[logDate]);
+    tmp.innerHTML = logRowHTML(slot, logRec());
     var fresh = tmp.firstChild;
     el.className = fresh.className;
     el.replaceChild(fresh.querySelector(".log-plan"), el.querySelector(".log-plan"));
@@ -1775,14 +1794,14 @@
     var rec = sessionFor(logDate);
     var pick = programmeDayFor(logDate);
     rec.programme.week = pick.week; rec.programme.day = pick.day;
-    var e = entryForSlot(rec, slot.key);
+    var e = entryForSlot(logRec(), slot.key);
     if(!e){
-      e = {id:newId(), t:null, exercise:slot.exercise, weight:slot.planned.weight, unit:state.unit, reps:null, status:null, planned:clone(slot.planned), note:""};
-      var draft = draftWeights[logDate+"|"+slot.key];
+      e = stampDay({id:newId(), t:null, exercise:slot.exercise, weight:slot.planned.weight, unit:state.unit, reps:null, status:null, planned:clone(slot.planned), note:""});
+      var draft = draftWeights[draftKey(slot)];
       if(draft!==undefined) e.weight = draft;
-      var draftNote = draftNotes[logDate+"|"+slot.key];
+      var draftNote = draftNotes[draftKey(slot)];
       if(draftNote) e.note = draftNote;
-      delete draftNotes[logDate+"|"+slot.key];
+      delete draftNotes[draftKey(slot)];
       rec.entries.push(e);
     }
     Object.keys(fields).forEach(function(k){ e[k] = fields[k]; });
@@ -1791,7 +1810,7 @@
   }
   function clearSlotEntry(slot){
     var rec = sessions[logDate];
-    var e = rec && entryForSlot(rec, slot.key);
+    var e = rec && entryForSlot(logRec(), slot.key);
     if(!e) return;
     e.deleted = true; e.t = nowISO();   // a tombstone, so a sync merge cannot bring it back
     touchSession(rec);
@@ -1814,14 +1833,10 @@
   document.getElementById("logDate").addEventListener("change", function(e){
     if(e.target.value){ logDate = e.target.value; openExtras = {}; renderLog(); }
   });
+  // picking another day only changes what is shown: sets already logged stay
+  // with the day they were logged against
   function pickLogDay(week, day){
-    var rec = sessions[logDate];
-    if(rec && rec.programme){
-      rec.programme.week = week; rec.programme.day = day;
-      touchSession(rec);
-    } else {
-      logPicks[logDate] = {week:week, day:day};
-    }
+    logPicks[logDate] = {week:week, day:day};
     openExtras = {};
     renderLog();
   }
@@ -1843,7 +1858,7 @@
     var row = btn.closest("[data-slot]");
     var slot = row && currentLogSlots[row.dataset.slot];
     if(!slot) return;
-    var existing = entryForSlot(sessions[logDate], slot.key);
+    var existing = entryForSlot(logRec(), slot.key);
     if(act==="tick"){
       // ticking keeps any reps typed in the row; only an empty field means "as planned"
       var typed = parseNum(row.querySelector('[data-act="reps"]').value);
@@ -1866,7 +1881,7 @@
     var rec = sessionFor(logDate);
     var pick = programmeDayFor(logDate);
     rec.programme.week = pick.week; rec.programme.day = pick.day;
-    var live = liveEntries(rec), last = null, entry;
+    var live = liveEntries(logRec()), last = null, entry;
     if(sectionKey.indexOf("adhoc:")===0){
       var name = sectionKey.slice(6);
       live.forEach(function(e){ if(!e.planned && normName(e.exercise)===name) last = e; });
@@ -1881,6 +1896,7 @@
       entry = {exercise:sec.exercise, planned:{key:sectionKey+":extra", lift:sec.lift, kind:"extra", set:null, reps:null, amrap:false, weight:null}};
     }
     entry.id = newId(); entry.t = nowISO();
+    stampDay(entry);
     entry.weight = last.weight==null ? null : last.weight;
     entry.unit = last.unit || state.unit;
     entry.reps = last.reps==null ? 0 : last.reps;
@@ -1907,7 +1923,7 @@
     var row = t.closest("[data-slot]");
     var slot = row && currentLogSlots[row.dataset.slot];
     if(!slot) return;
-    var existing = entryForSlot(sessions[logDate], slot.key);
+    var existing = entryForSlot(logRec(), slot.key);
     if(act==="reps"){
       var reps = parseNum(t.value);
       // on a ticked set, changing the reps keeps it ticked; clearing them goes back to the plan
@@ -1916,11 +1932,11 @@
       else upsertSlotEntry(slot, {status:"reps", reps:Math.max(0, Math.round(reps))});
     } else if(act==="weight"){
       var w = parseNum(t.value);
-      draftWeights[logDate+"|"+slot.key] = w;
+      draftWeights[draftKey(slot)] = w;
       if(existing) upsertSlotEntry(slot, {weight:w});
     } else if(act==="note"){
       if(existing) upsertSlotEntry(slot, {note:t.value.trim()});
-      else draftNotes[logDate+"|"+slot.key] = t.value.trim();
+      else draftNotes[draftKey(slot)] = t.value.trim();
     } else return;
     rerenderLogRow(slot.key);
   });
@@ -1933,8 +1949,8 @@
     var rec = sessionFor(logDate);
     var pick = programmeDayFor(logDate);
     rec.programme.week = pick.week; rec.programme.day = pick.day;
-    rec.entries.push({id:newId(), t:nowISO(), exercise:canonicalName(name), weight:parseNum(document.getElementById("addExWeight").value),
-      unit:state.unit, reps:Math.max(0, Math.round(reps)), status:"reps", planned:null, note:""});
+    rec.entries.push(stampDay({id:newId(), t:nowISO(), exercise:canonicalName(name), weight:parseNum(document.getElementById("addExWeight").value),
+      unit:state.unit, reps:Math.max(0, Math.round(reps)), status:"reps", planned:null, note:""}));
     touchSession(rec);
     // the form keeps its values, so the next set of the same thing is one more tap
     renderLog();
@@ -1942,7 +1958,7 @@
 
   document.getElementById("finishBtn").addEventListener("click", function(){
     var msg = document.getElementById("logMsg");
-    var n = liveEntries(sessions[logDate]).length;
+    var n = liveEntries(logRec()).length;
     msg.textContent = n ? "Saved "+n+" set"+(n===1?"":"s")+"." : "Nothing logged yet.";
     onSessionFinished();
     setTimeout(function(){ msg.textContent = ""; }, 3000);
@@ -1960,14 +1976,23 @@
   function loggedPlans(){
     var plans = {}, list = [];
     sessionDates().forEach(function(d){
-      var r = sessions[d];
-      if(!liveEntries(r).length) return;
-      var name = (r.programme && r.programme.title) || "";
-      var week = (r.programme && r.programme.week) || 1;
-      if(!plans[name]){ plans[name] = {name:name, weeks:{}, latest:d, latestWeek:week}; list.push(plans[name]); }
-      var p = plans[name];
-      (p.weeks[week] = p.weeks[week] || []).push(r);
-      if(d >= p.latest){ p.latest = d; p.latestWeek = week; }
+      var rec = sessions[d];
+      var name = (rec.programme && rec.programme.title) || "";
+      // one part per programme day logged on this date
+      var parts = {}, order = [];
+      liveEntries(rec).forEach(function(e){
+        var wd = entryDay(e, rec), k = wd.week+"|"+wd.day;
+        if(!parts[k]){ parts[k] = wd; order.push(k); }
+      });
+      order.forEach(function(k){
+        var wd = parts[k];
+        var r = dayView(rec, wd);
+        r.programme = {title:name, week:wd.week, day:wd.day, state:rec.programme && rec.programme.state};
+        if(!plans[name]){ plans[name] = {name:name, weeks:{}, latest:d, latestWeek:wd.week}; list.push(plans[name]); }
+        var p = plans[name];
+        (p.weeks[wd.week] = p.weeks[wd.week] || []).push(r);
+        if(d >= p.latest){ p.latest = d; p.latestWeek = wd.week; }
+      });
     });
     return list.sort(function(a, b){ return a.latest < b.latest ? 1 : a.latest > b.latest ? -1 : 0; });
   }

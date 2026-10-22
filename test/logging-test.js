@@ -936,6 +936,59 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(dom);
   }
 
+
+  // ---------------- two programme days on one date ----------------
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    const doc = dom.doc;
+    await wait(150);
+    const loggedRows = () => doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed, #logBody .log-row.skipped').length;
+    // OHP day: a ticked set, a typed set, an added set and an extra exercise
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    setValue(dom, rowBy(doc, 'main:4').querySelector('[data-act="reps"]'), '4');
+    await wait(20);
+    doc.querySelector('#logBody .log-section [data-act="addset"]').click();
+    await wait(20);
+    setValue(dom, doc.getElementById('addExName'), 'Pull up', 'input');
+    doc.getElementById('addExReps').value = '5';
+    doc.getElementById('addExBtn').click();
+    await wait(20);
+    const ohpLogged = loggedRows();
+    // switch to day 2 (Deadlift)
+    setValue(dom, doc.getElementById('logDay'), '2');
+    await wait(30);
+    log('switching to another day shows that day\'s plan, nothing logged on it', /Deadlift/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === 0 && !/Pull up/.test(doc.getElementById('logBody').textContent));
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    log('a set logged on the second day is marked there', rowBy(doc, 'main:3').classList.contains('done') && loggedRows() === 1);
+    setValue(dom, doc.getElementById('logDay'), '1');
+    await wait(30);
+    log('switching back, the first day\'s sets are untouched', /Overhead Press/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === ohpLogged && rowBy(doc, 'main:4').querySelector('[data-act="reps"]').value === '4' && /Pull up/.test(doc.getElementById('logBody').textContent));
+    const rec = await idbGet(idb, '531-planner', 'sessions', TODAY);
+    const live = rec.entries.filter(e => !e.deleted);
+    log('each set records the programme day it belongs to', live.filter(e => e.week === 1 && e.day === 1).length === 4 && live.filter(e => e.week === 1 && e.day === 2 && e.exercise === 'Deadlift').length === 1);
+    done(dom);
+
+    const R = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    await wait(200);
+    const cards = R.doc.querySelectorAll('#replayView .day-card');
+    log('replay shows both days logged on the same date, each with its own sets', !cards[0].classList.contains('unlogged') && !cards[1].classList.contains('unlogged') && /Pull up/.test(cards[0].textContent) && !/Pull up/.test(cards[1].textContent) && cards[1].querySelectorAll('.replay-row.done').length === 1);
+    done(R);
+
+    // sets logged before this change carry no day of their own: they stay with their session's day
+    const idb2 = new IDBFactory();
+    await idbPut(idb2, '531-planner', 'sessions', [{ date: TODAY, programme: { title: TODAY, week: 1, day: 3, state: null }, updated: 'x', rev: 1, entries: [
+      { id: 'old1', t: 'x', exercise: 'Squat', weight: 100, unit: 'kg', reps: 5, status: 'ticked', planned: { key: 'main:3', lift: 'squat', kind: 'work', set: 1, reps: 5, amrap: false, weight: 100 }, note: '' }] }]);
+    const O = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idb2 });
+    await wait(200);
+    log('older sets without a day stay with their session\'s day', O.doc.getElementById('logDay').value === '3' && rowBy(O.doc, 'main:3').classList.length > 1 && O.doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed').length === 1);
+    setValue(O, O.doc.getElementById('logDay'), '1');
+    await wait(30);
+    log('and do not show on another day', O.doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed').length === 0);
+    done(O);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

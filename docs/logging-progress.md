@@ -69,6 +69,12 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Old sessions keep the title they were logged with (not renamed), so they appear under that name; a blank one shows as "Untitled plan".
 - Bug caught by tests: the plan-name pattern was a `var` further down the script than the first `loadState()`, so share links failed to import. The pattern now lives inside `splitPlanName()`.
 
+### Several programme days on one date (22 Oct, bug from Andy)
+- Bug: a date holds one session record, and picking another day in the log relabelled the whole session, so OHP sets showed against the deadlift plan.
+- Fix: every new entry records `week` and `day` (the programme day it was logged against). The log view and replay work on `dayView(rec, {week, day})`, the entries of that day only, so one date can hold OHP and deadlift. Picking a day only changes what is shown (`logPicks`); `rec.programme.week/day` now means the last day logged on that date, and is what the log opens on.
+- Entries from before this have no `week`/`day` and fall back to `rec.programme`. Any that were relabelled by the bug stay under the day last picked.
+- Drafts (weight or comment typed before logging) are keyed by date, week, day and slot.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 
