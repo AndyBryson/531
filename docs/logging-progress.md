@@ -75,6 +75,12 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Entries from before this have no `week`/`day` and fall back to `rec.programme`. Any that were relabelled by the bug stay under the day last picked.
 - Drafts (weight or comment typed before logging) are keyed by date, week, day and slot.
 
+### Start session (22 Oct, Andy's idea)
+- The Log tab starts with the date/week/day pickers and a Start session button; the day's sets are shown but locked (`#logWork.locked`, `inert`, and the handlers ignore input) until a session is started.
+- Starting stores `activeSession` `{date, week, day, started}` in IndexedDB `meta` (this device only, not synced) and replaces the pickers with a sticky bar: lift name, date, week, day, a Change link and Finish session. The page reopens on the running session.
+- Finish session ends it (pickers back, "Session saved: N sets", sync push as before). Change ends it without syncing, after a confirm if sets are logged; the sets stay with their day. Starting on another date simply replaces any running session.
+- The old Finish button at the bottom of the page is gone; it lives in the bar.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

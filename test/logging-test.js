@@ -173,6 +173,11 @@ function makeFakeDriveFetch() {
 }
 // swaps the page's GOOGLE_CLIENT_ID, so tests do not depend on the real one
 const withClientId = id => html => html.replace(/var GOOGLE_CLIENT_ID = "[^"]*";/, 'var GOOGLE_CLIENT_ID = "' + id + '";');
+// taps Start session in the log view (sets are locked until then)
+async function startLog(dom) {
+  const b = dom.doc.getElementById('startBtn');
+  if (b && !dom.doc.getElementById('logStart').hidden) { b.click(); await wait(20); }
+}
 const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + act + '"]');
 
 (async () => {
@@ -201,6 +206,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
     const doc = dom.doc;
     await wait(150);
+    await startLog(dom);
     log('#v=log opens the logging view', doc.body.dataset.view === 'log' && doc.querySelector('#viewTabs [data-view="log"]').classList.contains('active'));
     log('logging view defaults to today', doc.getElementById('logDate').value === TODAY);
     log('first session defaults to week 1, day 1 (Overhead Press)', doc.getElementById('logWeek').value === '1' && doc.getElementById('logDay').value === '1' && /Overhead Press/.test(doc.getElementById('logDay').selectedOptions[0].textContent));
@@ -289,7 +295,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('removing an ad hoc set leaves one', doc.querySelectorAll('#logBody [data-entry]').length === 1);
 
     doc.getElementById('finishBtn').click();
-    log('finish session confirms what was saved', /Saved \d+ sets?/.test(doc.getElementById('logMsg').textContent));
+    log('finish session confirms what was saved', /Session saved: \d+ sets?/.test(doc.getElementById('logMsg').textContent));
 
     // next day suggests the next programme day
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -306,6 +312,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
 
     const again = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
     await wait(200);
+    await startLog(again);
     log('after reload with no share link, the saved programme is restored', again.doc.getElementById('programTitle').value === 'Cycle 4');
     log('after reload, today\'s logged sets are still there', again.doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed, #logBody .log-row.skipped').length >= 5);
     done(again);
@@ -313,6 +320,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     // dev keeps its own database
     const dev = load({ url: 'https://andybryson.github.io/531/dev/#v=log', idb });
     await wait(200);
+    await startLog(dev);
     log('dev build uses its own database (nothing logged there)', dev.doc.querySelectorAll('#logBody .log-row.done').length === 0 && dev.doc.getElementById('programTitle').value === '');
     done(dev);
   }
@@ -321,6 +329,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
   {
     const dom = load({ url: 'https://andybryson.github.io/531/#v=log' });
     await wait(150);
+    await startLog(dom);
     rowBy(dom.doc, 'main:3').querySelector('[data-act="tick"]').click();
     await wait(30);
     log('no IndexedDB: logging still works in memory', rowBy(dom.doc, 'main:3').classList.contains('done'));
@@ -480,6 +489,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const authA = fakeAuth(false);
     let A = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idbA, fakes: fakesFor(authA) });
     await wait(150);
+    await startLog(A);
     rowBy(A.doc, 'main:3').querySelector('[data-act="tick"]').click();
     await wait(50);
     A.doc.querySelector('#viewTabs [data-view="plan"]').click();
@@ -512,6 +522,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const authB = fakeAuth(false);
     let B = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idbB, fakes: fakesFor(authB) });
     await wait(150);
+    await startLog(B);
     driveBtn(B.doc, 'link').click();
     await wait(80);
     log('linking a second device finds the folder and asks: load or start from scratch', !!driveBtn(B.doc, 'load') && !!driveBtn(B.doc, 'scratch') && /choose/i.test(B.doc.getElementById('syncPill').textContent));
@@ -551,6 +562,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const authA2 = fakeAuth(false);
     A = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idbA, fakes: fakesFor(authA2) });
     await wait(150);
+    await startLog(A);
     log('after a reload with no token, the pill asks for a tap instead of popping sign-in', A.doc.getElementById('syncPill').textContent === 'Tap to sync' && authA2.signIns === 0);
     A.doc.getElementById('syncPill').click();
     await wait(150);
@@ -560,6 +572,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     rowBy(A.doc, 'main:7').querySelector('[data-act="tick"]').click();
     A.doc.getElementById('finishBtn').click();
     await wait(30);
+    await startLog(A);
     log('Finish session pushes without waiting for the delay', gdrive.json(TODAY + '.json', 'sessions').entries.some(e => e.planned && e.planned.key === 'main:7' && !e.deleted));
 
     // failure and retry
@@ -622,6 +635,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const R = load({ url: 'https://andybryson.github.io/531/#v=log', idb: new IDBFactory(), fakes: { auth: fakeAuth(false), syncDelayMs: 30 },
       beforeParse: w => { w.fetch = fakeFetch; } });
     await wait(150);
+    await startLog(R);
     rowBy(R.doc, 'main:3').querySelector('[data-act="tick"]').click();
     await wait(20);
     driveBtn(R.doc, 'link').click();
@@ -731,6 +745,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
     const doc = dom.doc;
     await wait(150);
+    await startLog(dom);
     const section = title => Array.from(doc.querySelectorAll('#logBody .log-section')).find(sec => sec.querySelector('h3').textContent === title);
     const addSet = title => section(title).querySelector('[data-act="addset"]');
     log('every block in the log has a + set button', Array.from(doc.querySelectorAll('#logBody .log-section')).every(sec => !!sec.querySelector('[data-act="addset"]')));
@@ -763,16 +778,20 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const before = section('Overhead Press').querySelectorAll('.log-row.added').length;
     // (main already has a logged set; use a fresh date for an empty block)
     const tomorrow = daysFrom(TODAY, 1);
+    doc.getElementById('changeBtn').click();
     setValue(dom, doc.getElementById('logDate'), tomorrow);
     await wait(30);
+    await startLog(dom);
     const firstTitle = doc.querySelector('#logBody .log-section h3').textContent;
     addSet(firstTitle).click();
     await wait(20);
     const lastPlanned = Array.from(section(firstTitle).querySelectorAll('[data-slot]')).pop();
     const fresh = section(firstTitle).querySelector('.log-row.added');
     log('+ set on an empty block copies its last planned set', before === 1 && !!fresh && fresh.querySelector('[data-act="eweight"]').value === lastPlanned.querySelector('[data-act="weight"]').value);
+    doc.getElementById('changeBtn').click();
     setValue(dom, doc.getElementById('logDate'), TODAY);
     await wait(30);
+    await startLog(dom);
 
     // ad hoc exercise block gets + set too
     setValue(dom, doc.getElementById('addExName'), 'Pull up', 'input');
@@ -801,6 +820,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
     const doc = dom.doc;
     await wait(150);
+    await startLog(dom);
     const entryFor = async key => (await idbGet(idb, '531-planner', 'sessions', TODAY)).entries.find(e => e.planned && e.planned.key === key && !e.deleted);
     // a warm-up, not yet logged: comment first, then tick
     rowBy(doc, 'main:0').querySelector('[data-act="more"]').click();
@@ -850,6 +870,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
     const doc = dom.doc;
     await wait(150);
+    await startLog(dom);
     const entryFor = async key => (await idbGet(idb, '531-planner', 'sessions', TODAY)).entries.find(e => e.planned && e.planned.key === key && !e.deleted);
     // reps typed and committed, then ticked
     setValue(dom, rowBy(doc, 'main:4').querySelector('[data-act="reps"]'), '3');
@@ -925,6 +946,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const idb = new IDBFactory();
     const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
     await wait(150);
+    await startLog(dom);
     setValue(dom, rowBy(dom.doc, 'main:5').querySelector('[data-act="reps"]'), '0');
     await wait(10);
     rowBy(dom.doc, 'main:5').querySelector('[data-act="more"]').click();
@@ -943,6 +965,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
     const doc = dom.doc;
     await wait(150);
+    await startLog(dom);
     const loggedRows = () => doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed, #logBody .log-row.skipped').length;
     // OHP day: a ticked set, a typed set, an added set and an extra exercise
     rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
@@ -956,14 +979,18 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     await wait(20);
     const ohpLogged = loggedRows();
     // switch to day 2 (Deadlift)
+    doc.getElementById('changeBtn').click();
     setValue(dom, doc.getElementById('logDay'), '2');
     await wait(30);
+    await startLog(dom);
     log('switching to another day shows that day\'s plan, nothing logged on it', /Deadlift/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === 0 && !/Pull up/.test(doc.getElementById('logBody').textContent));
     rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
     await wait(30);
     log('a set logged on the second day is marked there', rowBy(doc, 'main:3').classList.contains('done') && loggedRows() === 1);
+    doc.getElementById('changeBtn').click();
     setValue(dom, doc.getElementById('logDay'), '1');
     await wait(30);
+    await startLog(dom);
     log('switching back, the first day\'s sets are untouched', /Overhead Press/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === ohpLogged && rowBy(doc, 'main:4').querySelector('[data-act="reps"]').value === '4' && /Pull up/.test(doc.getElementById('logBody').textContent));
     const rec = await idbGet(idb, '531-planner', 'sessions', TODAY);
     const live = rec.entries.filter(e => !e.deleted);
@@ -982,11 +1009,73 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
       { id: 'old1', t: 'x', exercise: 'Squat', weight: 100, unit: 'kg', reps: 5, status: 'ticked', planned: { key: 'main:3', lift: 'squat', kind: 'work', set: 1, reps: 5, amrap: false, weight: 100 }, note: '' }] }]);
     const O = load({ url: 'https://andybryson.github.io/531/#v=log', idb: idb2 });
     await wait(200);
+    await startLog(O);
     log('older sets without a day stay with their session\'s day', O.doc.getElementById('logDay').value === '3' && rowBy(O.doc, 'main:3').classList.length > 1 && O.doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed').length === 1);
+    O.doc.getElementById('changeBtn').click();
     setValue(O, O.doc.getElementById('logDay'), '1');
     await wait(30);
     log('and do not show on another day', O.doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed').length === 0);
     done(O);
+  }
+
+
+  // ---------------- Start session / pinned bar ----------------
+  {
+    const idb = new IDBFactory();
+    let asked = 0, answer = false;
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb, confirm: () => { asked++; return answer; } });
+    const doc = dom.doc;
+    await wait(150);
+    log('before starting: pickers and a Start session button, no session bar', !doc.getElementById('logStart').hidden && doc.getElementById('logBar').hidden);
+    log('before starting: the sets are shown but locked', doc.getElementById('logWork').classList.contains('locked') && doc.querySelectorAll('#logBody .log-row').length > 0);
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    doc.querySelector('#logBody [data-act="addset"]').click();
+    await wait(30);
+    log('before starting: tapping a set logs nothing', !(await idbGet(idb, '531-planner', 'sessions', TODAY)));
+    setValue(dom, doc.getElementById('logDay'), '2');
+    await wait(20);
+    doc.getElementById('startBtn').click();
+    await wait(30);
+    const barText = doc.getElementById('logBarText').textContent;
+    log('starting shows one pinned line with date, week and day', !doc.getElementById('logBar').hidden && doc.getElementById('logStart').hidden && /Deadlift/.test(doc.querySelector('#logBarText b').textContent) && /Week 1 · Day 2/.test(barText));
+    log('starting unlocks the sets', !doc.getElementById('logWork').classList.contains('locked'));
+    log('the session is saved on the device', (await idbGet(idb, '531-planner', 'meta', 'activeSession')).day === 2);
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    log('sets can be logged once started', rowBy(doc, 'main:3').classList.contains('done'));
+    done(dom);
+
+    // reopening the app (no #v=log needed for the session to survive)
+    const again = load({ url: 'https://andybryson.github.io/531/#v=log', idb, confirm: () => { asked++; return answer; } });
+    await wait(200);
+    log('reopening the app comes back to the running session', !again.doc.getElementById('logBar').hidden && /DeadliftThu|Deadlift/.test(again.doc.getElementById('logBarText').textContent) && /Day 2/.test(again.doc.getElementById('logBarText').textContent) && rowBy(again.doc, 'main:3').classList.contains('done'));
+    // Change asks first when sets are logged
+    again.doc.getElementById('changeBtn').click();
+    await wait(20);
+    log('Change asks first when sets are already logged; saying no keeps the session', asked === 1 && !again.doc.getElementById('logBar').hidden);
+    answer = true;
+    again.doc.getElementById('changeBtn').click();
+    await wait(20);
+    log('saying yes unlocks the pickers, keeping the logged sets', asked === 2 && !again.doc.getElementById('logStart').hidden && again.doc.getElementById('logDay').value === '2' && rowBy(again.doc, 'main:3').classList.contains('done'));
+    again.doc.getElementById('startBtn').click();
+    await wait(20);
+    again.doc.getElementById('finishBtn').click();
+    await wait(30);
+    log('Finish session ends it: pickers back, a saved message, nothing running', !again.doc.getElementById('logStart').hidden && /Session saved: 1 set/.test(again.doc.getElementById('logMsg').textContent) && !(await idbGet(idb, '531-planner', 'meta', 'activeSession')));
+    done(again);
+
+    const third = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    await wait(200);
+    log('after finishing, reopening shows the Start session button', !third.doc.getElementById('logStart').hidden && third.doc.getElementById('logBar').hidden);
+    // a new session on another date replaces any running one
+    third.doc.getElementById('startBtn').click();
+    await wait(20);
+    third.doc.getElementById('changeBtn').click();
+    setValue(third, third.doc.getElementById('logDate'), daysFrom(TODAY, 1));
+    third.doc.getElementById('startBtn').click();
+    await wait(30);
+    log('starting on another date replaces the running session', (await idbGet(idb, '531-planner', 'meta', 'activeSession')).date === daysFrom(TODAY, 1));
+    done(third);
   }
 
   console.log('\nFINAL total runtime errors:', totalErrors);

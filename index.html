@@ -237,9 +237,20 @@
   .log-add .ex-name{flex:1 1 100%;}
   .log-add input[type=number]{flex:1 1 70px; width:70px;}
   .log-add .btn{flex:1 1 90px; height:44px;}
-  .log-foot{display:flex; gap:8px; align-items:center; margin-top:18px;}
-  .log-foot .btn{height:48px; flex:1; font-size:15px;}
-  .log-msg{font-size:12.5px; color:var(--good);}
+  .log-start{margin-bottom:14px;}
+  .log-start .log-head{margin-bottom:8px;}
+  .log-start-btn{width:100%; height:52px; font-size:16px;}
+  .log-msg{display:block; font-size:12.5px; color:var(--good); margin-top:6px; min-height:1em;}
+  /* the running session: one line pinned to the top while scrolling */
+  .log-bar{position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--accent); border-radius:9px; padding:8px 10px; margin-bottom:14px; box-shadow:var(--shadow);}
+  .log-bar[hidden]{display:none;}
+  .log-bar-text{flex:1; min-width:0; display:flex; flex-direction:column; line-height:1.25;}
+  .log-bar-text b{font-family:var(--display); font-weight:600; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .log-bar-text small{font-size:12px; color:var(--text-dim);}
+  .log-change{background:none; border:none; color:var(--accent); font-size:13px; text-decoration:underline; padding:4px;}
+  .log-bar .btn{height:44px; flex:none;}
+  /* sets are shown but can't be touched until the session starts */
+  #logWork.locked{opacity:.45; pointer-events:none; user-select:none;}
 
   /* replay: planned on the left, what was done on the right */
   .replay-head{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
@@ -453,11 +464,21 @@
   </div>
 
   <section class="log-view" id="logView">
-    <div class="log-head">
-      <input type="date" id="logDate" aria-label="Date">
-      <select id="logWeek" aria-label="Programme week"></select>
-      <select id="logDay" aria-label="Programme day"></select>
+    <div class="log-start" id="logStart">
+      <div class="log-head">
+        <input type="date" id="logDate" aria-label="Date">
+        <select id="logWeek" aria-label="Programme week"></select>
+        <select id="logDay" aria-label="Programme day"></select>
+      </div>
+      <button class="btn primary log-start-btn" id="startBtn">Start session</button>
+      <span class="log-msg" id="logMsg"></span>
     </div>
+    <div class="log-bar" id="logBar" hidden>
+      <span class="log-bar-text" id="logBarText"></span>
+      <button class="log-change" id="changeBtn">Change</button>
+      <button class="btn primary" id="finishBtn">Finish session</button>
+    </div>
+    <div id="logWork">
     <div id="logBody"></div>
     <div class="log-section">
       <h3>Add exercise</h3>
@@ -469,9 +490,6 @@
       </div>
       <datalist id="exerciseNames"></datalist>
     </div>
-    <div class="log-foot">
-      <button class="btn primary" id="finishBtn">Finish session</button>
-      <span class="log-msg" id="logMsg"></span>
     </div>
   </section>
 
@@ -1555,6 +1573,29 @@
     })};
   }
   function logRec(){ return dayView(sessions[logDate], programmeDayFor(logDate)); }
+
+  // The running session: {date, week, day, started}, saved on this device (not
+  // synced) so it survives closing the app mid-workout. Sets can only be logged
+  // while one is running, and its date and day are fixed until it is finished
+  // or changed.
+  var activeSession = null;
+  function saveActiveSession(){
+    if(!store) return;
+    (activeSession ? store.setMeta("activeSession", activeSession) : store.deleteMeta("activeSession")).catch(noop);
+  }
+  function startSession(){
+    var pick = programmeDayFor(logDate);
+    activeSession = {date:logDate, week:pick.week, day:pick.day, started:nowISO()};
+    logPicks[logDate] = {week:pick.week, day:pick.day};
+    saveActiveSession();
+    document.getElementById("logMsg").textContent = "";
+    renderLog();
+  }
+  function endSession(){
+    activeSession = null;
+    saveActiveSession();
+    renderLog();
+  }
   function draftKey(slot){ var p = programmeDayFor(logDate); return logDate+"|"+p.week+"|"+p.day+"|"+slot.key; }
   function stampDay(e){ var p = programmeDayFor(logDate); e.week = p.week; e.day = p.day; return e; }
 
@@ -1718,9 +1759,24 @@
   function renderLog(){
     var body = document.getElementById("logBody");
     if(!storeReady){ body.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
+    if(activeSession){
+      logDate = activeSession.date;
+      logPicks[logDate] = {week:activeSession.week, day:activeSession.day};
+    }
     var program = generateProgram();
     var pick = programmeDayFor(logDate);
     var rec = logRec();
+    var running = !!activeSession;
+    document.getElementById("logStart").hidden = running;
+    document.getElementById("logBar").hidden = !running;
+    var work = document.getElementById("logWork");
+    work.classList.toggle("locked", !running);
+    work.inert = !running;
+    if(running){
+      var d = programmeDay(program, pick.week, pick.day);
+      document.getElementById("logBarText").innerHTML = '<b>'+(d ? LIFT_META[d.lift].name : "Day "+pick.day)+'</b>'
+        + '<small>'+fmtDay(logDate)+' · '+WEEK_LABEL[pick.week]+' · Day '+(d ? d.dayLabel : pick.day)+'</small>';
+    }
 
     document.getElementById("logDate").value = logDate;
     var weekSel = document.getElementById("logWeek");
@@ -1844,6 +1900,7 @@
   document.getElementById("logDay").addEventListener("change", function(e){ pickLogDay(programmeDayFor(logDate).week, parseInt(e.target.value,10)); });
 
   document.getElementById("logBody").addEventListener("click", function(e){
+    if(!activeSession) return;
     var btn = e.target.closest("[data-act]");
     if(!btn || btn.tagName!=="BUTTON") return;
     var act = btn.dataset.act;
@@ -1907,6 +1964,7 @@
   }
 
   document.getElementById("logBody").addEventListener("change", function(e){
+    if(!activeSession) return;
     var t = e.target, act = t.dataset.act;
     if(act==="eweight" || act==="ereps" || act==="enote"){
       var erow = t.closest("[data-entry]"), rec = sessions[logDate];
@@ -1942,6 +2000,7 @@
   });
 
   document.getElementById("addExBtn").addEventListener("click", function(){
+    if(!activeSession) return;
     var nameEl = document.getElementById("addExName");
     var name = nameEl.value.trim();
     var reps = parseNum(document.getElementById("addExReps").value);
@@ -1956,12 +2015,20 @@
     renderLog();
   });
 
+  document.getElementById("startBtn").addEventListener("click", startSession);
   document.getElementById("finishBtn").addEventListener("click", function(){
     var msg = document.getElementById("logMsg");
     var n = liveEntries(logRec()).length;
-    msg.textContent = n ? "Saved "+n+" set"+(n===1?"":"s")+"." : "Nothing logged yet.";
+    endSession();
+    msg.textContent = n ? "Session saved: "+n+" set"+(n===1?"":"s")+"." : "Session ended, nothing logged.";
     onSessionFinished();
-    setTimeout(function(){ msg.textContent = ""; }, 3000);
+    setTimeout(function(){ msg.textContent = ""; }, 4000);
+  });
+  // unlocks the date and day; sets already logged stay with the day they were logged against
+  document.getElementById("changeBtn").addEventListener("click", function(){
+    var n = liveEntries(logRec()).length;
+    if(n && !window.confirm("Change the date or day of this session? The "+n+" set"+(n===1?"":"s")+" already logged stay with "+document.getElementById("logBarText").textContent+".")) return;
+    endSession();
   });
 
   // ---------------- replay ----------------
@@ -2644,11 +2711,12 @@
   // programme; without one, the saved programme is loaded.
   var storeLoaded = openStore().then(function(st){
     store = st;
-    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link")]);
+    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link"), st.getMeta("activeSession")]);
   }).then(function(res){
     var saved = res[0];
     (res[1]||[]).forEach(function(rec){ sessions[rec.date] = rec; });
     link = res[2] || null;
+    activeSession = res[3] || null;
     if(saved && saved.state){
       savedProgrammeJSON = JSON.stringify(saved.state);
       programmeModified = saved.modified || null;
