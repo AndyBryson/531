@@ -88,6 +88,15 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 ### Promoted to main (22 Oct)
 - `dev` merged into `main` (fast-forward) at Andy's request. The live site now has logging, replay, install and Drive sync. It uses its own IndexedDB (`531-planner`) and Drive folder (`531 Planner`), separate from dev's, so it needs linking once on each device. The deploy workflow is now on `main`, so a push to either branch republishes both.
 
+### Several plans (22 Oct, Andy: "plan the next programme while still working on this one")
+- `meta.plans` holds every plan `{id, state, modified}`; `meta.editingPlan` is the one open in the planner (its state is the global `state`). The old `meta.programme` migrates to a plan with id `m-<name>` (from the name, so two devices upgrading separately agree).
+- Planner: plan picker plus New plan (copy of the open plan, dated start + 7 days per included week, no title), and a hint naming the plan logging uses today.
+- Log: uses the plan in effect on the session date (newest start date on or before it); a plan dropdown above the date overrides it before starting; the running session stores `planId`. Log code runs under `inLogPlan()`, swapping `state` via `withState()`; `realState` keeps the planner's own state reachable during a swap (a bug caught by tests: the dropdown and suggestions read the swapped copy). The week/day suggestion only follows sessions of the same plan.
+- Drive: `plans/<plan name>.json` (`{id, state}`, `appProperties.planId`), last write wins per plan; a renamed plan renames its file. Load from Drive replaces the device's plans with Drive's; an older folder with only `programme.json` is loaded as a migrated plan. `programme.json` is left in Drive, unused.
+- Share links: a new name is added as a plan; the same name as an existing plan asks before replacing it.
+- Not built: deleting plans.
+- Promoted straight to `main` at Andy's request.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

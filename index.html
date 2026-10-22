@@ -127,6 +127,10 @@
   .program-date-input:focus{outline:none; border-bottom-color:var(--accent);}
   .plan-sep{font-family:var(--display); font-size:22px; color:var(--text-dim);}
   .print-title{display:none;}
+  .plan-bar{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+  .plan-bar label{font-size:12.5px; color:var(--text-dim);}
+  .plan-bar select{font-size:13.5px; padding:7px 8px; max-width:100%;}
+  .plan-bar .hint{margin:0;}
   .program-sub{font-size:12px; color:var(--text-dim);}
   .program-actions{display:flex; gap:8px; flex:none;}
 
@@ -206,6 +210,7 @@
   .replay-view{max-width:1440px;}
   .log-head{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
   .log-head input, .log-head select{font-size:15px; padding:9px 10px; flex:1 1 130px;}
+  .log-head .log-plan-sel{flex-basis:100%;}
   .log-section{margin-bottom:16px;}
   .log-section > h3{font-size:15px; margin:0 0 8px;}
   .log-rows{display:flex; flex-direction:column; gap:6px;}
@@ -278,7 +283,7 @@
      multiple of --ps, which that function sets so each week fills one page. -->
 <style id="printStyles" media="print">
   :root{--ps:1;}
-  .dev-banner, .topbar, #logView, #replayView, .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
+  .dev-banner, .topbar, #logView, #replayView, .plan-bar, .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
   body{background:#fff; color:#000; font-size:calc(var(--ps) * 10px);}
   .app{max-width:none; padding:0;}
   .shell{display:block; padding:0;}
@@ -432,6 +437,12 @@
     </aside>
 
     <main class="output" id="output">
+      <div class="plan-bar">
+        <label for="planSelect">Plan</label>
+        <select id="planSelect"></select>
+        <button class="btn" id="newPlanBtn" title="A copy of this plan, starting the day after it ends">New plan</button>
+        <span class="hint" id="planInUse"></span>
+      </div>
       <div class="program-head">
         <div class="plan-name">
           <input type="date" id="programDate" class="program-date-input" aria-label="Plan start date" required>
@@ -466,6 +477,7 @@
   <section class="log-view" id="logView">
     <div class="log-start" id="logStart">
       <div class="log-head">
+        <select id="logPlan" aria-label="Plan" class="log-plan-sel"></select>
         <input type="date" id="logDate" aria-label="Date">
         <select id="logWeek" aria-label="Programme week"></select>
         <select id="logDay" aria-label="Programme day"></select>
@@ -1225,10 +1237,11 @@
     }).join("");
     document.getElementById("showPlatesCheck").checked = state.showPlates;
 
-    var planName = splitPlanName(state.programTitle);
-    document.getElementById("programDate").value = planName.date;
-    document.getElementById("programTitle").value = planName.title;
+    var nameParts = splitPlanName(state.programTitle);
+    document.getElementById("programDate").value = nameParts.date;
+    document.getElementById("programTitle").value = nameParts.title;
     showPlanName();
+    renderPlanBar();
 
     renderAccessoryEditor();
   }
@@ -1344,9 +1357,23 @@
     if(t.id==="showPlatesCheck"){ state.showPlates = t.checked; render(); return; }
   });
 
+  function renderPlanBar(){
+    var list = planList();
+    if(!editingPlanId || !plans[editingPlanId]) list = [{id:"", state:state}].concat(list);
+    document.getElementById("planSelect").innerHTML = list.map(function(p){
+      var current = p.id===editingPlanId || !p.id;
+      return '<option value="'+escapeAttr(p.id)+'"'+(current ? " selected" : "")+'>'+escapeAttr(current ? state.programTitle : p.state.programTitle)+'</option>';
+    }).join("");
+    var inUse = planInEffect(isoDate(new Date()));
+    document.getElementById("planInUse").textContent = inUse && list.length>1 ? "Logging today uses: "+planName(inUse) : "";
+  }
+  document.getElementById("planSelect").addEventListener("change", function(e){ if(e.target.value) openPlan(e.target.value); });
+  document.getElementById("newPlanBtn").addEventListener("click", newPlan);
   function showPlanName(){
     document.getElementById("printTitle").textContent = state.programTitle;
     document.title = APP_TITLE+" - "+state.programTitle;
+    var opt = document.querySelector("#planSelect option:checked");
+    if(opt) opt.textContent = state.programTitle;
   }
   document.getElementById("programTitle").addEventListener("input", function(e){
     state.programTitle = joinPlanName(splitPlanName(state.programTitle).date, e.target.value);
@@ -1492,19 +1519,93 @@
 
   var store = null, storeReady = false;
   var sessions = {};            // date -> session record, the in-memory copy of the store
-  var savedProgrammeJSON = null; // last programme state written to the store
-  var programmeModified = null;  // when this device last changed it (ISO)
 
-  // the programme is saved alongside the sessions so the installed app, which
-  // opens without a share link in the URL, still has it
+  // ---------------- plans ----------------
+  // Several plans live side by side: the one being run, the next one being
+  // planned, and old ones. Each is {id, state, modified}, kept in the store's
+  // meta "plans". The planner edits one of them (editingPlanId; its state is the
+  // global `state`). The Log tab uses the plan in effect on the session's date,
+  // the newest whose start date is on or before it, unless another is picked
+  // when starting a session.
+  var plans = {};
+  var editingPlanId = null;
+  var savedPlanJSON = null; // the editing plan's state as last written to the store
+
+  function newPlanId(){ return "p-"+newId(); }
+  // a programme saved before plans existed gets an id from its name, so two
+  // devices upgrading separately agree on it and do not make duplicates
+  function migratedPlanId(name){ return "m-"+String(name).replace(/[^0-9A-Za-z]+/g, "-"); }
+  function planStateOf(p){ return p.id===editingPlanId ? (realState || state) : p.state; }
+  function planName(p){ return planStateOf(p).programTitle; }
+  // newest first: names start with the start date
+  function planList(){
+    return Object.keys(plans).map(function(k){ return plans[k]; }).sort(function(a, b){
+      var x = planName(a), y = planName(b);
+      return x < y ? 1 : x > y ? -1 : 0;
+    });
+  }
+  function planInEffect(date){
+    var list = planList();
+    for(var i=0;i<list.length;i++) if(splitPlanName(planName(list[i])).date <= date) return list[i];
+    return list[list.length-1] || null;
+  }
+  function savePlans(){
+    if(!store) return;
+    store.setMeta("plans", plans).catch(noop);
+    if(editingPlanId) store.setMeta("editingPlan", editingPlanId).catch(noop);
+  }
+
+  // saves the plan being edited (called from the debounced saveState)
   function persistProgramme(){
     if(!storeReady) return;
     var json = JSON.stringify(state);
-    if(json===savedProgrammeJSON) return;
-    savedProgrammeJSON = json;
-    programmeModified = nowISO();
-    store.setMeta("programme", {state:JSON.parse(json), modified:programmeModified}).catch(noop);
+    if(json===savedPlanJSON && editingPlanId) return;
+    savedPlanJSON = json;
+    if(!editingPlanId) editingPlanId = newPlanId();
+    plans[editingPlanId] = {id:editingPlanId, state:JSON.parse(json), modified:nowISO()};
+    savePlans();
     onProgrammeChanged();
+  }
+  // switches the planner to another plan
+  function openPlan(id){
+    if(!plans[id]) return;
+    persistProgramme();
+    editingPlanId = id;
+    state = mergeState(plans[id].state);
+    savedPlanJSON = JSON.stringify(plans[id].state);
+    savePlans();
+    render();
+  }
+  // the next plan: a copy of the one open, starting the day after it ends
+  function newPlan(){
+    persistProgramme();
+    var cur = splitPlanName(state.programTitle);
+    var start = parseDate(cur.date);
+    start.setDate(start.getDate() + 7*Math.max(1, includedWeeks().length));
+    var st = clone(state);
+    st.programTitle = isoDate(start);
+    editingPlanId = newPlanId();
+    state = mergeState(st);
+    savedPlanJSON = null;
+    persistProgramme();
+    render();
+  }
+  // a share link adds its plan, or replaces the plan of the same name after asking
+  function importSharedPlan(fromLink){
+    var st = mergeState(fromLink);
+    persistProgramme();
+    var same = planList().filter(function(p){ return planName(p)===st.programTitle; })[0];
+    if(same){
+      if(JSON.stringify(mergeState(planStateOf(same)))===JSON.stringify(st)){ openPlan(same.id); return; }
+      if(!window.confirm('Replace your plan "'+st.programTitle+'" with the one in this link?')){ openPlan(same.id); return; }
+      editingPlanId = same.id;
+    } else {
+      editingPlanId = newPlanId();
+    }
+    state = st;
+    savedPlanJSON = null;
+    persistProgramme();
+    render();
   }
   function persistSession(rec){
     if(store) store.putSession(rec).catch(noop);
@@ -1533,7 +1634,7 @@
     if(rec && rec.programme && rec.programme.week) return {week:rec.programme.week, day:rec.programme.day};
     var weeks = includedWeeks();
     if(!weeks.length) return {week:1, day:1};
-    var prior = sessionDates().filter(function(d){ return d<date && liveEntries(sessions[d]).length && sessions[d].programme; });
+    var prior = sessionDates().filter(function(d){ return d<date && liveEntries(sessions[d]).length && sessions[d].programme && sessions[d].programme.title===state.programTitle; });
     if(!prior.length) return {week:weeks[0], day:1};
     var last = sessions[prior[prior.length-1]].programme;
     var daysInWeek = scheduleForWeek(last.week).length;
@@ -1574,6 +1675,29 @@
   }
   function logRec(){ return dayView(sessions[logDate], programmeDayFor(logDate)); }
 
+  // the plan the Log tab works from on a date: the running session's, a plan
+  // picked before starting, or the one in effect on that date
+  var logPlanPicks = {}; // date -> plan id
+  function logPlanFor(date){
+    if(activeSession && activeSession.date===date && plans[activeSession.planId]) return plans[activeSession.planId];
+    if(plans[logPlanPicks[date]]) return plans[logPlanPicks[date]];
+    return planInEffect(date);
+  }
+  // runs fn with `state` set to the log's plan (the planner may have another open)
+  function inLogPlan(fn){
+    var p = logPlanFor(logDate);
+    if(!p || p.id===editingPlanId){
+      if(realState===null) return fn();
+      // already inside another plan's swap: back to the planner's own state
+      var swapped = state, real = realState;
+      state = real; realState = null;
+      try{ return fn(); } finally { realState = real; state = swapped; }
+    }
+    return withState(p.state, fn);
+  }
+  function inLog(fn){ return function(e){ var self = this; return inLogPlan(function(){ return fn.call(self, e); }); }; }
+  function onLog(id, type, fn){ document.getElementById(id).addEventListener(type, inLog(fn)); }
+
   // The running session: {date, week, day, started}, saved on this device (not
   // synced) so it survives closing the app mid-workout. Sets can only be logged
   // while one is running, and its date and day are fixed until it is finished
@@ -1585,7 +1709,8 @@
   }
   function startSession(){
     var pick = programmeDayFor(logDate);
-    activeSession = {date:logDate, week:pick.week, day:pick.day, started:nowISO()};
+    var lp = logPlanFor(logDate);
+    activeSession = {date:logDate, week:pick.week, day:pick.day, planId:lp ? lp.id : null, started:nowISO()};
     logPicks[logDate] = {week:pick.week, day:pick.day};
     saveActiveSession();
     document.getElementById("logMsg").textContent = "";
@@ -1756,7 +1881,8 @@
   }
 
   var currentLogSlots = {}, currentLogSections = {};
-  function renderLog(){
+  function renderLog(){ inLogPlan(renderLogNow); }
+  function renderLogNow(){
     var body = document.getElementById("logBody");
     if(!storeReady){ body.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
     if(activeSession){
@@ -1775,9 +1901,14 @@
     if(running){
       var d = programmeDay(program, pick.week, pick.day);
       document.getElementById("logBarText").innerHTML = '<b>'+(d ? LIFT_META[d.lift].name : "Day "+pick.day)+'</b>'
-        + '<small>'+fmtDay(logDate)+' · '+WEEK_LABEL[pick.week]+' · Day '+(d ? d.dayLabel : pick.day)+'</small>';
+        + '<small>'+fmtDay(logDate)+' · '+WEEK_LABEL[pick.week]+' · Day '+(d ? d.dayLabel : pick.day)+'</small>'
+        + '<small>'+escapeAttr(state.programTitle)+'</small>';
     }
 
+    var lp = logPlanFor(logDate);
+    document.getElementById("logPlan").innerHTML = planList().map(function(p){
+      return '<option value="'+escapeAttr(p.id)+'"'+(lp && p.id===lp.id ? " selected" : "")+'>'+escapeAttr(planName(p))+'</option>';
+    }).join("");
     document.getElementById("logDate").value = logDate;
     var weekSel = document.getElementById("logWeek");
     weekSel.innerHTML = program.weeks.map(function(w){
@@ -1886,7 +2017,13 @@
     if(b) setView(b.dataset.view);
   });
 
-  document.getElementById("logDate").addEventListener("change", function(e){
+  onLog("logPlan", "change", function(e){
+    logPlanPicks[logDate] = e.target.value;
+    delete logPicks[logDate]; // suggest the week and day for that plan afresh
+    openExtras = {};
+    renderLog();
+  });
+  onLog("logDate", "change", function(e){
     if(e.target.value){ logDate = e.target.value; openExtras = {}; renderLog(); }
   });
   // picking another day only changes what is shown: sets already logged stay
@@ -1896,10 +2033,10 @@
     openExtras = {};
     renderLog();
   }
-  document.getElementById("logWeek").addEventListener("change", function(e){ pickLogDay(parseInt(e.target.value,10), 1); });
-  document.getElementById("logDay").addEventListener("change", function(e){ pickLogDay(programmeDayFor(logDate).week, parseInt(e.target.value,10)); });
+  onLog("logWeek", "change", function(e){ pickLogDay(parseInt(e.target.value,10), 1); });
+  onLog("logDay", "change", function(e){ pickLogDay(programmeDayFor(logDate).week, parseInt(e.target.value,10)); });
 
-  document.getElementById("logBody").addEventListener("click", function(e){
+  onLog("logBody", "click", function(e){
     if(!activeSession) return;
     var btn = e.target.closest("[data-act]");
     if(!btn || btn.tagName!=="BUTTON") return;
@@ -1963,7 +2100,7 @@
     renderLog();
   }
 
-  document.getElementById("logBody").addEventListener("change", function(e){
+  onLog("logBody", "change", function(e){
     if(!activeSession) return;
     var t = e.target, act = t.dataset.act;
     if(act==="eweight" || act==="ereps" || act==="enote"){
@@ -1999,7 +2136,7 @@
     rerenderLogRow(slot.key);
   });
 
-  document.getElementById("addExBtn").addEventListener("click", function(){
+  onLog("addExBtn", "click", function(){
     if(!activeSession) return;
     var nameEl = document.getElementById("addExName");
     var name = nameEl.value.trim();
@@ -2015,8 +2152,8 @@
     renderLog();
   });
 
-  document.getElementById("startBtn").addEventListener("click", startSession);
-  document.getElementById("finishBtn").addEventListener("click", function(){
+  onLog("startBtn", "click", startSession);
+  onLog("finishBtn", "click", function(){
     var msg = document.getElementById("logMsg");
     var n = liveEntries(logRec()).length;
     endSession();
@@ -2025,7 +2162,7 @@
     setTimeout(function(){ msg.textContent = ""; }, 4000);
   });
   // unlocks the date and day; sets already logged stay with the day they were logged against
-  document.getElementById("changeBtn").addEventListener("click", function(){
+  onLog("changeBtn", "click", function(){
     var n = liveEntries(logRec()).length;
     if(n && !window.confirm("Change the date or day of this session? The "+n+" set"+(n===1?"":"s")+" already logged stay with "+document.getElementById("logBarText").textContent+".")) return;
     endSession();
@@ -2066,10 +2203,12 @@
 
   // runs fn with `state` temporarily swapped for a saved snapshot, so the
   // planner's own generation and formatting code draw the plan as it was
+  var realState = null; // the planner's own state while withState has it swapped out
   function withState(snapshot, fn){
-    var saved = state;
+    var saved = state, outer = realState===null;
+    if(outer) realState = saved;
     state = mergeState(clone(snapshot));
-    try{ return fn(); } finally { state = saved; }
+    try{ return fn(); } finally { state = saved; if(outer) realState = null; }
   }
 
   function resultText(e){
@@ -2268,7 +2407,7 @@
   function driveRest(getToken){
     var API = "https://www.googleapis.com/drive/v3/files";
     var UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
-    var FIELDS = "id,name,mimeType,modifiedTime";
+    var FIELDS = "id,name,mimeType,modifiedTime,appProperties";
     function call(url, opts){
       opts = opts || {};
       opts.headers = Object.assign({Authorization:"Bearer "+getToken()}, opts.headers || {});
@@ -2299,10 +2438,10 @@
         return page(null);
       },
       read:function(id){ return call(API+"/"+id+"?alt=media"); },
-      create:function(parentId, name, data){
+      create:function(parentId, name, data, props){
         var boundary = "531planner"+Date.now();
         var body = "--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
-          + JSON.stringify({name:name, parents:[parentId], mimeType:"application/json"})
+          + JSON.stringify({name:name, parents:[parentId], mimeType:"application/json", appProperties:props || {}})
           + "\r\n--"+boundary+"\r\nContent-Type: application/json\r\n\r\n"
           + JSON.stringify(data)
           + "\r\n--"+boundary+"--";
@@ -2318,7 +2457,7 @@
   var SYNC_DELAY_MS = fakes.syncDelayMs || 2000;
   var googleConfigured = !!(GOOGLE_CLIENT_ID || fakes.auth);
 
-  // when linked: {folderId, sessionsId, programme:{id, driveModified, localModified}, sessions:{date:{id, modifiedTime, rev}}, lastSync}
+  // when linked: {folderId, sessionsId, plansId, plans:{planId:{fileId, driveModified, localModified}}, sessions:{date:{id, modifiedTime, rev}}, lastSync}
   var link = null;
   var syncStatus = "local"; // local | signin | pending | syncing | synced | failed | choose
   var syncError = "";
@@ -2379,7 +2518,7 @@
     var ready = auth.hasToken() ? Promise.resolve() : interactive ? auth.signIn() : null;
     if(!ready){ setSyncStatus("signin"); return Promise.resolve(); }
     setSyncStatus("syncing");
-    syncing = ready.then(syncProgramme).then(syncSessions).then(function(){
+    syncing = ready.then(syncPlans).then(syncSessions).then(function(){
       link.lastSync = nowISO();
       return saveLink();
     }).then(function(){
@@ -2394,33 +2533,48 @@
     return syncing;
   }
 
-  // programme.json: last write wins, comparing Drive's modifiedTime with when
-  // this device last changed the programme
-  function syncProgramme(){
-    return drive.list(link.folderId).then(function(files){
-      var remote = files.filter(function(f){ return f.name==="programme.json"; })[0];
-      var known = link.programme || {};
-      var localDirty = programmeModified !== known.localModified;
-      if(remote && remote.modifiedTime!==known.driveModified && (!localDirty || remote.modifiedTime > programmeModified)){
-        return drive.read(remote.id).then(function(remoteState){
-          applyProgramme(remoteState, remote.modifiedTime);
-          link.programme = {id:remote.id, driveModified:remote.modifiedTime, localModified:programmeModified};
-        });
-      }
-      if(localDirty || !remote){
-        var body = JSON.parse(savedProgrammeJSON || JSON.stringify(state));
-        var mod = programmeModified;
-        return (remote ? drive.update(remote.id, body) : drive.create(link.folderId, "programme.json", body)).then(function(f){
-          link.programme = {id:f.id, driveModified:f.modifiedTime, localModified:mod};
-        });
-      }
+  // plans/<plan name>.json, one file per plan, tagged with its id
+  // (appProperties.planId) so a rename keeps the same file. Last write wins per
+  // plan, comparing Drive's modifiedTime with when this device last changed it.
+  function planFileName(st){ return String(st.programTitle).replace(/[\/\\]/g, "-")+".json"; }
+  function syncPlans(){
+    var ensure = link.plansId ? Promise.resolve() : drive.list(link.folderId).then(function(files){
+      var f = files.filter(function(x){ return x.name==="plans" && x.mimeType===FOLDER_MIME; })[0];
+      return f || drive.createFolder("plans", link.folderId, {});
+    }).then(function(f){ link.plansId = f.id; });
+    return ensure.then(function(){ return drive.list(link.plansId); }).then(function(files){
+      var remote = {};
+      files.forEach(function(f){ var id = f.appProperties && f.appProperties.planId; if(id) remote[id] = f; });
+      link.plans = link.plans || {};
+      var ids = Object.keys(remote).concat(Object.keys(plans).filter(function(id){ return !remote[id]; }));
+      return ids.reduce(function(p, id){ return p.then(function(){ return syncPlan(id, remote[id]); }); }, Promise.resolve());
     });
   }
-  function applyProgramme(remoteState, modified){
-    state = mergeState(remoteState);
-    savedProgrammeJSON = JSON.stringify(state);
-    programmeModified = modified;
-    store.setMeta("programme", {state:JSON.parse(savedProgrammeJSON), modified:modified}).catch(noop);
+  function syncPlan(id, remote){
+    var known = link.plans[id] || {};
+    var local = plans[id];
+    var localDirty = !!local && local.modified!==known.localModified;
+    var remoteChanged = !!remote && remote.modifiedTime!==known.driveModified;
+    if(remoteChanged && (!localDirty || remote.modifiedTime > local.modified)){
+      return drive.read(remote.id).then(function(body){
+        applyPlan(id, body.state, remote.modifiedTime);
+        link.plans[id] = {fileId:remote.id, driveModified:remote.modifiedTime, localModified:remote.modifiedTime};
+      });
+    }
+    if(!local || !(localDirty || !remote)) return Promise.resolve();
+    var body = {id:id, state:clone(local.state)}, mod = local.modified, name = planFileName(local.state);
+    var put = remote
+      ? drive.update(remote.id, body).then(function(f){ return remote.name!==name ? drive.rename(f.id, name, {planId:id}) : f; })
+      : drive.create(link.plansId, name, body, {planId:id});
+    return put.then(function(f){ link.plans[id] = {fileId:f.id, driveModified:f.modifiedTime, localModified:mod}; });
+  }
+  function applyPlan(id, remoteState, modified){
+    plans[id] = {id:id, state:remoteState, modified:modified};
+    if(id===editingPlanId){
+      state = mergeState(remoteState);
+      savedPlanJSON = JSON.stringify(remoteState);
+    }
+    savePlans();
     render();
   }
 
@@ -2498,8 +2652,8 @@
   }
   function createDriveFolder(){
     return drive.createFolder(DRIVE_FOLDER, null, {app:APP_TAG}).then(function(folder){
-      return drive.createFolder("sessions", folder.id, {}).then(function(sub){
-        link = {folderId:folder.id, sessionsId:sub.id, programme:null, sessions:{}, lastSync:null};
+      return Promise.all([drive.createFolder("sessions", folder.id, {}), drive.createFolder("plans", folder.id, {})]).then(function(subs){
+        link = {folderId:folder.id, sessionsId:subs[0].id, plansId:subs[1].id, plans:{}, sessions:{}, lastSync:null};
         return saveLink();
       });
     }).then(function(){ return syncNow(false); });
@@ -2507,15 +2661,40 @@
   function loadFromDrive(){
     var found = foundFolder; foundFolder = null;
     setSyncStatus("syncing");
+    // Drive's plans replace this device's; logged sessions are merged by the sync
+    var loaded = {}, known = {};
     return drive.list(found.id).then(function(files){
       var sub = files.filter(function(f){ return f.name==="sessions" && f.mimeType===FOLDER_MIME; })[0];
+      var plansDir = files.filter(function(f){ return f.name==="plans" && f.mimeType===FOLDER_MIME; })[0];
       var prog = files.filter(function(f){ return f.name==="programme.json"; })[0];
-      link = {folderId:found.id, sessionsId:sub ? sub.id : null, programme:null, sessions:{}, lastSync:null};
-      if(!prog) return;
-      return drive.read(prog.id).then(function(remoteState){
-        applyProgramme(remoteState, prog.modifiedTime);
-        link.programme = {id:prog.id, driveModified:prog.modifiedTime, localModified:programmeModified};
+      link = {folderId:found.id, sessionsId:sub ? sub.id : null, plansId:plansDir ? plansDir.id : null, plans:{}, sessions:{}, lastSync:null};
+      if(plansDir) return drive.list(plansDir.id).then(function(planFiles){
+        return planFiles.reduce(function(p, f){
+          var id = f.appProperties && f.appProperties.planId;
+          if(!id) return p;
+          return p.then(function(){ return drive.read(f.id); }).then(function(body){
+            loaded[id] = {id:id, state:body.state, modified:f.modifiedTime};
+            known[id] = {fileId:f.id, driveModified:f.modifiedTime, localModified:f.modifiedTime};
+          });
+        }, Promise.resolve());
       });
+      // a folder from before plans existed holds a single programme.json
+      if(prog) return drive.read(prog.id).then(function(remoteState){
+        var id = migratedPlanId(normalisePlanName(remoteState.programTitle));
+        loaded[id] = {id:id, state:remoteState, modified:prog.modifiedTime};
+      });
+    }).then(function(){
+      if(Object.keys(loaded).length){
+        plans = loaded;
+        link.plans = known;
+        editingPlanId = null;
+        var p = planInEffect(isoDate(new Date()));
+        editingPlanId = p.id;
+        state = mergeState(p.state);
+        savedPlanJSON = JSON.stringify(p.state);
+        savePlans();
+        render();
+      }
     }).then(saveLink).then(function(){ return syncNow(false); }).catch(driveFailed);
   }
   function startFromScratch(){
@@ -2701,13 +2880,9 @@
   // this same tab, or using back/forward — and is safe from feedback loops
   // opening a share link while linked to Drive would overwrite programme.json
   // for every device, so ask first
-  function confirmShareLink(fromLink, current){
-    if(JSON.stringify(mergeState(fromLink))===JSON.stringify(mergeState(current))) return true;
-    return window.confirm("This link has a different programme. Replace your programme, here and in Google Drive, with the one in the link?");
-  }
   window.addEventListener("hashchange", function(){
     var fromLink = hashState();
-    if(fromLink && (!link || confirmShareLink(fromLink, state))) state = mergeState(fromLink);
+    if(fromLink){ if(storeReady) importSharedPlan(fromLink); else state = mergeState(fromLink); }
     var v = hashParams().v;
     render();
     setView(VIEWS.indexOf(v)>=0 ? v : "plan");
@@ -2721,20 +2896,29 @@
   // programme; without one, the saved programme is loaded.
   var storeLoaded = openStore().then(function(st){
     store = st;
-    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link"), st.getMeta("activeSession")]);
+    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link"), st.getMeta("activeSession"), st.getMeta("plans"), st.getMeta("editingPlan")]);
   }).then(function(res){
-    var saved = res[0];
+    var oldProgramme = res[0];
     (res[1]||[]).forEach(function(rec){ sessions[rec.date] = rec; });
     link = res[2] || null;
     activeSession = res[3] || null;
-    if(saved && saved.state){
-      savedProgrammeJSON = JSON.stringify(saved.state);
-      programmeModified = saved.modified || null;
-      var fromLink = hashState();
-      if(!fromLink) state = mergeState(saved.state);
-      else if(link && !confirmShareLink(fromLink, saved.state)) state = mergeState(saved.state);
+    plans = res[4] || {};
+    // the single programme saved before plans existed becomes the first plan
+    if(!Object.keys(plans).length && oldProgramme && oldProgramme.state){
+      var mid = migratedPlanId(normalisePlanName(oldProgramme.state.programTitle));
+      plans[mid] = {id:mid, state:oldProgramme.state, modified:oldProgramme.modified || nowISO()};
+      store.setMeta("plans", plans).catch(noop);
+    }
+    // open the plan last edited here, else the one in effect today
+    var open = plans[res[5]] || planInEffect(isoDate(new Date()));
+    if(open){
+      editingPlanId = open.id;
+      state = mergeState(open.state);
+      savedPlanJSON = JSON.stringify(open.state);
     }
     storeReady = true;
+    var fromLink = hashState();
+    if(fromLink) importSharedPlan(fromLink);
     render();
     setView(currentView);
     persistProgramme(); // now, not after the save debounce, so a first sync sees it

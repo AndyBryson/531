@@ -97,7 +97,7 @@ class FakeDrive {
   _id() { return 'f' + (++this.n); }
   _time() { this.clock = Math.max(Date.now(), (this.clock || 0) + 1); return new Date(this.clock).toISOString(); }
   _maybeFail(op) { this.calls.push(op); if (this.failNext > 0) { this.failNext--; return Promise.reject(Object.assign(new Error('Drive error 500'), { status: 500 })); } return null; }
-  _meta(f) { return { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime }; }
+  _meta(f) { return { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, appProperties: f.appProperties || {} }; }
   findFolder(name, tag) {
     return this._maybeFail('findFolder') || Promise.resolve(Object.values(this.files)
       .filter(f => f.name === name && f.mimeType === 'application/vnd.google-apps.folder' && (f.appProperties || {}).app === tag)
@@ -111,9 +111,9 @@ class FakeDrive {
   rename(id, name, props) { const f = this.files[id]; f.name = name; f.appProperties = props || {}; f.modifiedTime = this._time(); return this._maybeFail('rename') || Promise.resolve(this._meta(f)); }
   list(folderId) { return this._maybeFail('list') || Promise.resolve(Object.values(this.files).filter(f => f.parents.includes(folderId)).map(f => this._meta(f))); }
   read(id) { return this._maybeFail('read') || Promise.resolve(JSON.parse(this.files[id].content)); }
-  create(parentId, name, data) {
+  create(parentId, name, data, props) {
     return this._maybeFail('create') || (() => {
-      const f = { id: this._id(), name, mimeType: 'application/json', parents: [parentId], content: JSON.stringify(data), modifiedTime: this._time() };
+      const f = { id: this._id(), name, mimeType: 'application/json', parents: [parentId], appProperties: props || {}, content: JSON.stringify(data), modifiedTime: this._time() };
       this.files[f.id] = f; return Promise.resolve(this._meta(f));
     })();
   }
@@ -128,6 +128,12 @@ class FakeDrive {
     return Object.values(this.files).find(f => f.name === name && (!parent || f.parents.includes(parent.id)));
   }
   json(name, parentName) { const f = this.byName(name, parentName); return f && JSON.parse(f.content); }
+  // every plan file in a folder's plans/ subfolder: [{name, id, state}]
+  plans(folderName) {
+    const folder = Object.values(this.files).find(f => f.name === folderName && (f.appProperties || {}).app && !/old/.test(f.appProperties.app));
+    const dir = folder && Object.values(this.files).find(f => f.name === 'plans' && f.parents.includes(folder.id));
+    return dir ? Object.values(this.files).filter(f => f.parents.includes(dir.id)).map(f => Object.assign({ name: f.name }, JSON.parse(f.content))) : [];
+  }
 }
 function fakeAuth(signedIn) {
   const a = { signedIn: !!signedIn, signIns: 0,
@@ -144,7 +150,7 @@ function makeFakeDriveFetch() {
     opts = opts || {};
     const u = new URL(url);
     reqs.push({ method: opts.method || 'GET', url: u, headers: opts.headers || {}, body: opts.body });
-    const meta = f => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime });
+    const meta = f => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, appProperties: f.appProperties || {} });
     const now = () => new Date(Date.now() + (++n)).toISOString();
     if (u.pathname === '/drive/v3/files' && (opts.method || 'GET') === 'GET') {
       const q = u.searchParams.get('q');
@@ -160,7 +166,7 @@ function makeFakeDriveFetch() {
       const boundary = /boundary=(.+)$/.exec(opts.headers['Content-Type'])[1];
       const parts = opts.body.split('--' + boundary).slice(1, 3).map(p => p.slice(p.indexOf('\r\n\r\n') + 4).replace(/\r\n$/, ''));
       const m = JSON.parse(parts[0]);
-      const f = { id: 'id' + (++n), name: m.name, parents: m.parents, mimeType: m.mimeType, content: parts[1], modifiedTime: now() };
+      const f = { id: 'id' + (++n), name: m.name, parents: m.parents, mimeType: m.mimeType, appProperties: m.appProperties, content: parts[1], modifiedTime: now() };
       files[f.id] = f; return res(200, meta(f));
     }
     const upd = /^\/upload\/drive\/v3\/files\/(.+)$/.exec(u.pathname);
@@ -180,6 +186,12 @@ async function startLog(dom) {
 }
 // a replay day card by its programme day number (cards are in the order the days were done)
 const cardFor = (root, n) => Array.from(root.querySelectorAll('.day-card')).find(c => c.querySelector('.day-idx').textContent.startsWith('Day ' + n + ' '));
+// the plan the planner has open, as saved in a fake IndexedDB
+async function editingPlan(factory, dbName) {
+  const all = await idbGet(factory, dbName || '531-planner', 'meta', 'plans');
+  const id = await idbGet(factory, dbName || '531-planner', 'meta', 'editingPlan');
+  return all && all[id];
+}
 const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + act + '"]');
 
 (async () => {
@@ -503,8 +515,8 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const folder = gdrive.byName('531 Planner');
     log('linking signs in and creates the "531 Planner" folder, tagged', authA.signIns === 1 && !!folder && folder.appProperties.app === '531-planner');
     log('a sessions subfolder is created inside it', !!gdrive.byName('sessions', '531 Planner'));
-    const progJson = gdrive.json('programme.json', '531 Planner');
-    log('programme.json holds the current planner state', !!progJson && progJson.programTitle === TODAY + ' - Cycle 5' && progJson.template === 'bbb');
+    const planFiles = gdrive.plans('531 Planner');
+    log('the plan is saved as plans/<plan name>.json, tagged with its id', planFiles.length === 1 && planFiles[0].name === TODAY + ' - Cycle 5.json' && planFiles[0].state.template === 'bbb' && !!gdrive.byName(TODAY + ' - Cycle 5.json').appProperties.planId);
     const sessA = gdrive.json(TODAY + '.json', 'sessions');
     log('today\'s session is uploaded as sessions/<date>.json', !!sessA && sessA.date === TODAY && sessA.entries.length === 1 && sessA.entries[0].status === 'ticked');
     log('the Drive copy leaves out the local rev counter', sessA && !('rev' in sessA));
@@ -553,7 +565,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     B.doc.querySelector('#viewTabs [data-view="plan"]').click();
     setValue(B, B.doc.getElementById('programTitle'), 'Cycle 5 (phone edit)', 'input');
     await wait(450);
-    log('programme edit on B is pushed to programme.json', gdrive.json('programme.json', '531 Planner').programTitle === TODAY + ' - Cycle 5 (phone edit)');
+    log('a plan renamed on B is pushed, renaming its file (no duplicate)', JSON.stringify(gdrive.plans('531 Planner').map(f => f.name)) === JSON.stringify([TODAY + ' - Cycle 5 (phone edit).json']));
     A.window.document.dispatchEvent(new A.window.Event('visibilitychange'));
     await wait(150);
     log('A takes the newer programme from Drive', A.doc.getElementById('programTitle').value === 'Cycle 5 (phone edit)');
@@ -588,18 +600,23 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('retry pushes the queued set', A.doc.getElementById('syncPill').textContent === 'Synced' && gdrive.json(TODAY + '.json', 'sessions').entries.some(e => e.planned && e.planned.key === 'main:8'));
     done(A);
 
-    // share link while linked: asks before overwriting
-    const other = { programTitle: 'Shared by a friend', template: 'fsl' };
-    const shareHash = '#s=' + Buffer.from(JSON.stringify(other)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    // share links: a new name is added as another plan; the same name asks before replacing
+    const linkOf = st => '#s=' + Buffer.from(JSON.stringify(st)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     let asked = 0;
-    const declined = load({ url: 'https://andybryson.github.io/531/' + shareHash, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => { asked++; return false; } });
-    await wait(250);
-    log('opening a share link while linked asks first', asked === 1);
-    log('declining keeps the saved programme', declined.doc.getElementById('programTitle').value === 'Cycle 5 (phone edit)' && gdrive.json('programme.json', '531 Planner').programTitle === TODAY + ' - Cycle 5 (phone edit)');
-    done(declined);
-    const accepted = load({ url: 'https://andybryson.github.io/531/' + shareHash, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => true });
+    const added = load({ url: 'https://andybryson.github.io/531/' + linkOf({ programTitle: '2026-12-07 - Shared by a friend', template: 'fsl' }), idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => { asked++; return true; } });
     await wait(500);
-    log('accepting uses the link and pushes it to programme.json', accepted.doc.getElementById('programTitle').value === 'Shared by a friend' && gdrive.json('programme.json', '531 Planner').programTitle === TODAY + ' - Shared by a friend');
+    log('a share link with a new plan name is added as another plan, without asking', asked === 0 && added.doc.getElementById('programTitle').value === 'Shared by a friend' && added.doc.querySelectorAll('#planSelect option').length === 2);
+    log('the added plan is pushed and the existing one kept', JSON.stringify(gdrive.plans('531 Planner').map(f => f.name).sort()) === JSON.stringify([TODAY + ' - Cycle 5 (phone edit).json', '2026-12-07 - Shared by a friend.json'].sort()));
+    done(added);
+    const sameName = linkOf({ programTitle: TODAY + ' - Cycle 5 (phone edit)', template: 'gvt' });
+    const declined = load({ url: 'https://andybryson.github.io/531/' + sameName, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => { asked++; return false; } });
+    await wait(400);
+    log('a share link with the name of an existing plan asks before replacing it', asked === 1);
+    log('declining keeps that plan as it was', declined.doc.getElementById('templateSelect').value === 'bbb' && gdrive.plans('531 Planner').find(f => /phone edit/.test(f.name)).state.template === 'bbb');
+    done(declined);
+    const accepted = load({ url: 'https://andybryson.github.io/531/' + sameName, idb: idbA, fakes: fakesFor(fakeAuth(true)), confirm: () => true });
+    await wait(500);
+    log('accepting replaces it here and in Drive', accepted.doc.getElementById('templateSelect').value === 'gvt' && gdrive.plans('531 Planner').find(f => /phone edit/.test(f.name)).state.template === 'gvt' && gdrive.plans('531 Planner').length === 2);
     done(accepted);
 
     // device C: start from scratch keeps the old folder, renamed
@@ -613,8 +630,8 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('start from scratch renames the old folder with a date suffix', folders.some(f => f.name === '531 Planner (old ' + TODAY + ')' && f.appProperties.app !== '531-planner'));
     log('and creates a fresh folder from this device', folders.filter(f => f.name === '531 Planner' && f.appProperties.app === '531-planner').length === 1);
     const fresh = await gdrive.findFolder('531 Planner', '531-planner');
-    const freshProg = JSON.parse(Object.values(gdrive.files).find(f => f.name === 'programme.json' && f.parents.includes(fresh.id)).content);
-    log('the fresh folder holds this device\'s programme', freshProg.programTitle === TODAY);
+    const freshPlans = gdrive.plans('531 Planner');
+    log('the fresh folder holds this device\'s plan', !!fresh && freshPlans.length === 1 && freshPlans[0].state.programTitle === TODAY);
     driveBtn(C.doc, 'unlink').click();
     await wait(30);
     log('unlink returns to local only', C.doc.getElementById('syncPill').textContent === 'Local only' && !!driveBtn(C.doc, 'link'));
@@ -646,10 +663,10 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const find = reqs[0];
     log('REST: folder lookup searches by name, folder type and app tag', find.method === 'GET' && /name='531 Planner'/.test(find.url.searchParams.get('q')) && /appProperties has \{ key='app' and value='531-planner' \}/.test(find.url.searchParams.get('q')) && /trashed=false/.test(find.url.searchParams.get('q')));
     const mk = reqs.filter(r => r.method === 'POST' && r.url.pathname === '/drive/v3/files');
-    log('REST: creates the folder (tagged) and the sessions subfolder', mk.length === 2 && JSON.parse(mk[0].body).appProperties.app === '531-planner' && JSON.parse(mk[1].body).name === 'sessions');
+    log('REST: creates the folder (tagged) and its sessions and plans subfolders', mk.length === 3 && JSON.parse(mk[0].body).appProperties.app === '531-planner' && JSON.stringify(mk.slice(1).map(r => JSON.parse(r.body).name).sort()) === '["plans","sessions"]');
     const up = reqs.filter(r => r.url.pathname === '/upload/drive/v3/files' && r.url.searchParams.get('uploadType') === 'multipart');
-    log('REST: programme.json and the session are created with multipart uploads', up.length === 2 && /programme\.json/.test(up[0].body) && new RegExp(TODAY + '\\.json').test(up[1].body));
-    const sessFile = Object.values(files).find(f => f.name === TODAY + '.json');
+    log('REST: the plan (tagged with its id) and the session are created with multipart uploads', up.length === 2 && up[0].body.includes('"name":"' + TODAY + '.json"') && /"appProperties":\{"planId":"p-/.test(up[0].body) && up[1].body.includes('"name":"' + TODAY + '.json"'));
+    const sessFile = Object.values(files).find(f => f.name === TODAY + '.json' && 'entries' in JSON.parse(f.content));
     log('REST: uploaded session content round-trips as JSON', !!sessFile && JSON.parse(sessFile.content).entries.length === 1);
     rowBy(R.doc, 'main:4').querySelector('[data-act="tick"]').click();
     await wait(150);
@@ -913,14 +930,14 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     setValue(dom, doc.getElementById('programTitle'), 'Cycle 6', 'input');
     setValue(dom, doc.getElementById('programDate'), '2026-11-02');
     await wait(350);
-    const saved = await idbGet(idb, '531-planner', 'meta', 'programme');
+    const saved = await editingPlan(idb);
     log('the name is saved as "YYYY-MM-DD - title"', saved.state.programTitle === '2026-11-02 - Cycle 6' && doc.getElementById('printTitle').textContent === '2026-11-02 - Cycle 6' && /2026-11-02 - Cycle 6$/.test(doc.title));
     setValue(dom, doc.getElementById('programDate'), '');
     await wait(20);
     log('the date cannot be cleared', doc.getElementById('programDate').value === '2026-11-02');
     setValue(dom, doc.getElementById('programTitle'), '  ', 'input');
     await wait(350);
-    log('an empty title leaves just the date', (await idbGet(idb, '531-planner', 'meta', 'programme')).state.programTitle === '2026-11-02');
+    log('an empty title leaves just the date', (await editingPlan(idb)).state.programTitle === '2026-11-02');
     let copied = null;
     dom.window.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
     doc.getElementById('copyBtn').click();
@@ -1096,6 +1113,110 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const order = Array.from(R.doc.querySelectorAll('#replayView .day-card .day-idx')).map(x => x.textContent.split(' ·')[0]);
     log('replay shows days in the order they were done, then the rest in plan order', JSON.stringify(order) === '["Day 3","Day 1","Day 2","Day 4"]');
     done(R);
+  }
+
+
+  // ---------------- several plans ----------------
+  {
+    // an old single programme becomes the first plan
+    const idb = new IDBFactory();
+    const startA = daysFrom(TODAY, -17);
+    await idbPut(idb, '531-planner', 'meta', [{ state: { programTitle: startA + ' - Cycle 4', template: 'bbb', unit: 'kg' }, modified: '2026-10-01T00:00:00.000Z' }], 'programme');
+    const dom = load({ url: 'https://andybryson.github.io/531/', idb });
+    const doc = dom.doc;
+    await wait(200);
+    let plansMeta = await idbGet(idb, '531-planner', 'meta', 'plans');
+    const migratedId = 'm-' + (startA + ' - Cycle 4').replace(/[^0-9A-Za-z]+/g, '-');
+    log('the programme saved before plans existed becomes the first plan', !!plansMeta && Object.keys(plansMeta).length === 1 && !!plansMeta[migratedId] && doc.getElementById('programTitle').value === 'Cycle 4');
+    log('the plan picker lists it', doc.querySelectorAll('#planSelect option').length === 1);
+
+    // New plan: a copy starting the day after this one ends (4 weeks on)
+    doc.getElementById('newPlanBtn').click();
+    await wait(50);
+    const startB = daysFrom(startA, 28);
+    log('New plan copies the open plan, dated the day after it ends', doc.getElementById('programDate').value === startB && doc.getElementById('programTitle').value === '' && doc.getElementById('templateSelect').value === 'bbb' && doc.querySelectorAll('#planSelect option').length === 2);
+    doc.querySelector('[data-mode="tm"]').click();
+    await wait(20);
+    setValue(dom, doc.querySelector('[data-lift="ohp"][data-field="value"]'), '57.5', 'input');
+    setValue(dom, doc.getElementById('programTitle'), 'Cycle 5', 'input');
+    await wait(350);
+    plansMeta = await idbGet(idb, '531-planner', 'meta', 'plans');
+    const ids = Object.keys(plansMeta);
+    const planB = Object.values(plansMeta).find(p => p.id !== migratedId);
+    log('editing the new plan leaves the running one alone', ids.length === 2 && planB.state.programTitle === startB + ' - Cycle 5' && planB.state.lifts.ohp.value === 57.5 && plansMeta[migratedId].state.lifts.ohp.mode !== 'tm');
+    log('the planner says which plan logging uses today', /Logging today uses: .*Cycle 4/.test(doc.getElementById('planInUse').textContent));
+
+    // the Log uses the plan in effect today, though the planner has the next one open
+    doc.querySelector('#viewTabs [data-view="log"]').click();
+    await wait(30);
+    log('the Log picks the plan in effect today (newest start date not after today)', doc.getElementById('logPlan').selectedOptions[0].textContent === startA + ' - Cycle 4');
+    await startLog(dom);
+    log('the session bar names the plan', /Cycle 4/.test(doc.getElementById('logBarText').textContent));
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    let rec = await idbGet(idb, '531-planner', 'sessions', TODAY);
+    log('sets logged go against that plan (name and snapshot)', rec.programme.title === startA + ' - Cycle 4' && rec.programme.state.lifts.ohp.mode !== 'tm');
+    log('the planner still has the next plan open', doc.getElementById('programTitle').value === 'Cycle 5');
+
+    // picking the next plan for a session started early
+    doc.getElementById('finishBtn').click();
+    await wait(20);
+    const tomorrow = daysFrom(TODAY, 1);
+    setValue(dom, doc.getElementById('logDate'), tomorrow);
+    setValue(dom, doc.getElementById('logPlan'), planB.id);
+    await wait(20);
+    log('picking the next plan suggests its week 1 day 1', doc.getElementById('logWeek').value === '1' && doc.getElementById('logDay').value === '1');
+    await startLog(dom);
+    rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
+    await wait(30);
+    rec = await idbGet(idb, '531-planner', 'sessions', tomorrow);
+    log('a session started on the next plan logs against it', rec.programme.title === startB + ' - Cycle 5' && rec.entries[0].weight === Math.round(57.5 * 0.65 / 2.5) * 2.5);
+    doc.getElementById('finishBtn').click();
+    await wait(20);
+    setValue(dom, doc.getElementById('logDate'), startB);
+    await wait(20);
+    log('from its start date the next plan is used automatically', doc.getElementById('logPlan').selectedOptions[0].textContent === startB + ' - Cycle 5');
+
+    // switching plans in the planner
+    doc.querySelector('#viewTabs [data-view="plan"]').click();
+    setValue(dom, doc.getElementById('planSelect'), migratedId);
+    await wait(30);
+    log('the plan picker opens another plan', doc.getElementById('programTitle').value === 'Cycle 4' && (await idbGet(idb, '531-planner', 'meta', 'editingPlan')) === migratedId);
+    done(dom);
+    const again = load({ url: 'https://andybryson.github.io/531/', idb });
+    await wait(200);
+    log('reopening shows the plan last open here', again.doc.getElementById('programTitle').value === 'Cycle 4' && again.doc.querySelectorAll('#planSelect option').length === 2);
+    done(again);
+  }
+
+  // plans travel through Drive, and an old Drive folder (programme.json only) still loads
+  {
+    const gdrive = new FakeDrive();
+    const folder = await gdrive.createFolder('531 Planner', null, { app: '531-planner' });
+    await gdrive.createFolder('sessions', folder.id, {});
+    await gdrive.create(folder.id, 'programme.json', { programTitle: '2026-10-05', template: 'partnerfsl' });
+    const P = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory(), fakes: { drive: gdrive, auth: fakeAuth(false), syncDelayMs: 30 } });
+    await wait(150);
+    driveBtn(P.doc, 'link').click();
+    await wait(60);
+    driveBtn(P.doc, 'load').click();
+    await wait(250);
+    log('Load from an older Drive folder turns its programme.json into a plan', P.doc.getElementById('programDate').value === '2026-10-05' && P.doc.getElementById('templateSelect').value === 'partnerfsl' && P.doc.querySelectorAll('#planSelect option').length === 1);
+    log('and saves it under plans/ from then on', JSON.stringify(gdrive.plans('531 Planner').map(f => f.name)) === '["2026-10-05.json"]');
+    // a new plan made on this device reaches another one
+    P.doc.getElementById('newPlanBtn').click();
+    await wait(400);
+    log('a new plan is pushed to Drive as its own file', gdrive.plans('531 Planner').length === 2);
+    const Q = load({ url: 'https://andybryson.github.io/531/', idb: new IDBFactory(), fakes: { drive: gdrive, auth: fakeAuth(false), syncDelayMs: 30 } });
+    await wait(150);
+    driveBtn(Q.doc, 'link').click();
+    await wait(60);
+    driveBtn(Q.doc, 'load').click();
+    await wait(300);
+    const names = Array.from(Q.doc.querySelectorAll('#planSelect option')).map(o => o.textContent);
+    log('another device loads every plan from Drive', names.length === 2 && names.includes('2026-10-05') && names.includes('2026-11-02'));
+    log('it opens the plan in effect today', Q.doc.getElementById('programDate').value === '2026-10-05');
+    done(P); done(Q);
   }
 
   console.log('\nFINAL total runtime errors:', totalErrors);
