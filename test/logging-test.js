@@ -1219,6 +1219,90 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(P); done(Q);
   }
 
+
+  // ---------------- keep screen on (Screen Wake Lock) ----------------
+  {
+    // a fake navigator.wakeLock plus control over document.visibilityState
+    function wakeFakes(opts) {
+      const w = { requests: 0, held: [], fail: !!(opts && opts.fail), visibility: 'visible' };
+      w.install = win => {
+        Object.defineProperty(win.document, 'visibilityState', { configurable: true, get: () => w.visibility });
+        Object.defineProperty(win.navigator, 'wakeLock', { configurable: true, value: { request: type => {
+          w.requests++;
+          if (w.fail || type !== 'screen') return Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
+          const lock = { released: false, listeners: [],
+            addEventListener(t, f) { if (t === 'release') this.listeners.push(f); },
+            release() { if (!this.released) { this.released = true; w.held = w.held.filter(l => l !== this); this.listeners.forEach(f => f()); } return Promise.resolve(); } };
+          w.held.push(lock);
+          return Promise.resolve(lock);
+        } } });
+      };
+      // what the browser does when the tab is hidden: drop every lock
+      w.hide = win => { w.visibility = 'hidden'; w.held.slice().forEach(l => l.release()); win.document.dispatchEvent(new win.Event('visibilitychange')); };
+      w.show = win => { w.visibility = 'visible'; win.document.dispatchEvent(new win.Event('visibilitychange')); };
+      return w;
+    }
+
+    const none = load({ url: 'https://andybryson.github.io/531/#v=log', idb: new IDBFactory() });
+    await wait(150);
+    log('Keep screen on is hidden where the browser has no Wake Lock API', none.doc.getElementById('wakeRow').hidden === true);
+    done(none);
+
+    const idb = new IDBFactory();
+    const w = wakeFakes();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb, beforeParse: w.install });
+    const doc = dom.doc;
+    await wait(150);
+    const sw = () => doc.getElementById('wakeCheck');
+    log('the switch shows on the log view, off by default, no lock taken', doc.getElementById('wakeRow').hidden === false && sw().checked === false && w.requests === 0);
+    sw().checked = true; fire(dom, sw(), 'change');
+    await wait(20);
+    log('turning it on takes a screen wake lock', w.requests === 1 && w.held.length === 1);
+    log('the setting is saved on this device', (await idbGet(idb, '531-planner', 'meta', 'keepScreenOn')) === true);
+    w.hide(dom.window);
+    await wait(20);
+    log('hiding the tab: the browser drops the lock', w.held.length === 0);
+    w.show(dom.window);
+    await wait(20);
+    log('coming back to the tab asks for the lock again', w.requests === 2 && w.held.length === 1);
+    doc.querySelector('#viewTabs [data-view="plan"]').click();
+    await wait(20);
+    log('leaving the log view releases the lock', w.held.length === 0);
+    w.hide(dom.window); w.show(dom.window);
+    await wait(20);
+    log('while away from the log view, returning to the tab takes no lock', w.held.length === 0 && w.requests === 2);
+    doc.querySelector('#viewTabs [data-view="log"]').click();
+    await wait(20);
+    log('returning to the log view takes it again', w.requests === 3 && w.held.length === 1);
+    sw().checked = false; fire(dom, sw(), 'change');
+    await wait(20);
+    log('turning it off releases the lock', w.held.length === 0 && (await idbGet(idb, '531-planner', 'meta', 'keepScreenOn')) === false);
+    sw().checked = true; fire(dom, sw(), 'change');
+    await wait(20);
+    done(dom);
+
+    const w2 = wakeFakes();
+    const again = load({ url: 'https://andybryson.github.io/531/#v=log', idb, beforeParse: w2.install });
+    await wait(200);
+    log('reopening the app remembers the switch and takes the lock', again.doc.getElementById('wakeCheck').checked === true && w2.held.length === 1);
+    done(again);
+    const w3 = wakeFakes();
+    const onPlan = load({ url: 'https://andybryson.github.io/531/', idb, beforeParse: w3.install });
+    await wait(200);
+    log('opening on the planner does not take the lock', w3.requests === 0);
+    done(onPlan);
+
+    // the browser refuses (e.g. battery saver)
+    const w4 = wakeFakes({ fail: true });
+    const failing = load({ url: 'https://andybryson.github.io/531/#v=log', idb: new IDBFactory(), beforeParse: w4.install });
+    await wait(150);
+    const sw4 = failing.doc.getElementById('wakeCheck');
+    sw4.checked = true; fire(failing, sw4, 'change');
+    await wait(30);
+    log('if the lock is refused the switch turns back off with a short message', sw4.checked === false && /Couldn't keep the screen on/.test(failing.doc.getElementById('wakeMsg').textContent));
+    done(failing);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

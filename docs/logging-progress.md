@@ -97,6 +97,13 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Not built: deleting plans.
 - Promoted straight to `main` at Andy's request.
 
+### Keep screen on (23 Oct)
+- A "Keep screen on" switch at the top of the Log tab (`#wakeRow`), hidden when `navigator.wakeLock` is missing. `updateWakeLock()` takes a screen wake lock when the switch is on, the Log view is showing and the page is visible, and releases it otherwise. It runs from `setView()` and on `visibilitychange`, since the browser drops the lock whenever the tab is hidden.
+- The switch is saved in IndexedDB `meta.keepScreenOn` (this device only; `meta` is never synced to Drive) and restored on load.
+- If the request is refused (e.g. battery saver), the switch turns back off and shows "Couldn't keep the screen on. Battery saver can block it." for 5 s.
+- Tests use a fake `navigator.wakeLock` and a controllable `document.visibilityState`.
+- Andy asked for it on dev, a check, then straight to `main`.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

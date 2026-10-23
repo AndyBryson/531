@@ -242,6 +242,11 @@
   .log-add .ex-name{flex:1 1 100%;}
   .log-add input[type=number]{flex:1 1 70px; width:70px;}
   .log-add .btn{flex:1 1 90px; height:44px;}
+  .wake-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+  .wake-row[hidden]{display:none;}
+  .wake-toggle{display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; color:var(--text-dim); cursor:pointer;}
+  .wake-toggle input{width:20px; height:20px; accent-color:var(--accent); margin:0;}
+  .wake-msg{font-size:12.5px; color:var(--warn);}
   .log-start{margin-bottom:14px;}
   .log-start .log-head{margin-bottom:8px;}
   .log-start-btn{width:100%; height:52px; font-size:16px;}
@@ -475,6 +480,10 @@
   </div>
 
   <section class="log-view" id="logView">
+    <div class="wake-row" id="wakeRow" hidden>
+      <label class="wake-toggle"><input type="checkbox" id="wakeCheck" role="switch"> Keep screen on</label>
+      <span class="wake-msg" id="wakeMsg"></span>
+    </div>
     <div class="log-start" id="logStart">
       <div class="log-head">
         <select id="logPlan" aria-label="Plan" class="log-plan-sel"></select>
@@ -2009,8 +2018,59 @@
     document.querySelectorAll("#viewTabs [data-view]").forEach(function(b){ b.classList.toggle("active", b.dataset.view===currentView); });
     if(currentView==="log") renderLog();
     if(currentView==="replay") renderReplay();
+    updateWakeLock();
     saveState();
   }
+
+  // ---------------- keep screen on ----------------
+  // A switch on the Log tab that holds a Screen Wake Lock, so the phone does not
+  // lock between sets. The browser drops the lock whenever the page is hidden,
+  // so it is asked for again when the page comes back; it is let go when leaving
+  // the Log tab. The switch is remembered on this device only (IndexedDB meta,
+  // never synced) and hidden where the API is missing.
+  var wakeSupported = !!(navigator.wakeLock && navigator.wakeLock.request);
+  var keepScreenOn = false, wakeLock = null, wakeAsking = false, wakeMsgTimer = null;
+  function wantWakeLock(){ return keepScreenOn && currentView==="log" && document.visibilityState!=="hidden"; }
+  function updateWakeLock(){
+    if(!wakeSupported) return;
+    if(wantWakeLock()){
+      if(wakeLock || wakeAsking) return;
+      wakeAsking = true;
+      navigator.wakeLock.request("screen").then(function(lock){
+        wakeAsking = false;
+        if(!wantWakeLock()){ lock.release().catch(noop); return; }
+        wakeLock = lock;
+        var dropped = function(){ if(wakeLock===lock) wakeLock = null; };
+        if(lock.addEventListener) lock.addEventListener("release", dropped); else lock.onrelease = dropped;
+      }, function(){
+        wakeAsking = false;
+        setKeepScreenOn(false);
+        showWakeMsg("Couldn't keep the screen on. Battery saver can block it.");
+      });
+    } else if(wakeLock){
+      var held = wakeLock;
+      wakeLock = null;
+      held.release().catch(noop);
+    }
+  }
+  function setKeepScreenOn(on){
+    keepScreenOn = !!on;
+    document.getElementById("wakeCheck").checked = keepScreenOn;
+    if(store) store.setMeta("keepScreenOn", keepScreenOn).catch(noop);
+    updateWakeLock();
+  }
+  function showWakeMsg(text){
+    var el = document.getElementById("wakeMsg");
+    el.textContent = text;
+    clearTimeout(wakeMsgTimer);
+    wakeMsgTimer = setTimeout(function(){ el.textContent = ""; }, 5000);
+  }
+  document.getElementById("wakeRow").hidden = !wakeSupported;
+  document.getElementById("wakeCheck").addEventListener("change", function(e){
+    document.getElementById("wakeMsg").textContent = "";
+    setKeepScreenOn(e.target.checked);
+  });
+  document.addEventListener("visibilitychange", updateWakeLock);
 
   document.getElementById("viewTabs").addEventListener("click", function(e){
     var b = e.target.closest("[data-view]");
@@ -2896,12 +2956,14 @@
   // programme; without one, the saved programme is loaded.
   var storeLoaded = openStore().then(function(st){
     store = st;
-    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link"), st.getMeta("activeSession"), st.getMeta("plans"), st.getMeta("editingPlan")]);
+    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link"), st.getMeta("activeSession"), st.getMeta("plans"), st.getMeta("editingPlan"), st.getMeta("keepScreenOn")]);
   }).then(function(res){
     var oldProgramme = res[0];
     (res[1]||[]).forEach(function(rec){ sessions[rec.date] = rec; });
     link = res[2] || null;
     activeSession = res[3] || null;
+    keepScreenOn = res[6]===true;
+    document.getElementById("wakeCheck").checked = keepScreenOn;
     plans = res[4] || {};
     // the single programme saved before plans existed becomes the first plan
     if(!Object.keys(plans).length && oldProgramme && oldProgramme.state){
@@ -2922,6 +2984,7 @@
     render();
     setView(currentView);
     persistProgramme(); // now, not after the save debounce, so a first sync sees it
+    updateWakeLock();
     if(link){
       if(auth.preload) auth.preload();
       syncNow(false);
