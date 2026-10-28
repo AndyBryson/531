@@ -1685,12 +1685,20 @@
   function logRec(){ return dayView(sessions[logDate], programmeDayFor(logDate)); }
 
   // the plan the Log tab works from on a date: the running session's, a plan
-  // picked before starting, or the one in effect on that date
-  var logPlanPicks = {}; // date -> plan id
+  // picked before starting, for a past date the plan saved with its session
+  // ("As logged", so it shows what was planned then, not today's plan), or the
+  // one in effect on that date
+  var logPlanPicks = {}; // date -> plan id, or LOGGED_PLAN
+  var LOGGED_PLAN = "logged";
+  function loggedPlanFor(date){
+    var rec = sessions[date];
+    if(!rec || !rec.programme || !rec.programme.state || date >= isoDate(new Date())) return null;
+    return {id:LOGGED_PLAN, state:rec.programme.state};
+  }
   function logPlanFor(date){
     if(activeSession && activeSession.date===date && plans[activeSession.planId]) return plans[activeSession.planId];
     if(plans[logPlanPicks[date]]) return plans[logPlanPicks[date]];
-    return planInEffect(date);
+    return loggedPlanFor(date) || planInEffect(date);
   }
   // runs fn with `state` set to the log's plan (the planner may have another open)
   function inLogPlan(fn){
@@ -1866,11 +1874,13 @@
       + '</div>';
   }
 
-  // a set you added yourself (with "+ set" or "Add set"): weight and reps stay
-  // editable in place, × removes it
-  function addedRowHTML(e){
+  // a set you added yourself (with "+ set" or "Add set"), or any logged set with
+  // no planned row here: weight and reps stay editable in place, × removes it.
+  // `named` puts the exercise name on the row, for lists that mix exercises.
+  function addedRowHTML(e, named){
+    var label = (named ? e.exercise+(e.status==="skipped" ? " (skipped)" : "") : e.status==="skipped" ? "Skipped" : "Added set");
     return '<div class="log-row done added" data-entry="'+escapeAttr(e.id)+'">'
-      + '<div class="log-plan"><span class="set-meta">Added set</span>'
+      + '<div class="log-plan"><span class="set-meta">'+escapeAttr(label)+'</span>'
       + (e.note ? '<span class="log-status">'+escapeAttr(e.note)+'</span>' : "")
       + '</div>'
       + '<div class="log-ctrls">'
@@ -1885,8 +1895,31 @@
   function addSetHTML(sectionKey){
     return '<button class="log-addset" data-act="addset" data-section="'+escapeAttr(sectionKey)+'">+ set</button>';
   }
-  function extraEntries(rec, sectionKey){
-    return liveEntries(rec).filter(function(e){ return e.planned && e.planned.key===sectionKey+":extra"; });
+  // Sorts logged entries against a day's sections so each is shown once. An
+  // entry fills the planned row whose key it carries (the last one logged, if
+  // several do); it is an added set in a section when its key is that section's
+  // ":extra" and it is that section's exercise. Anything else (a set added by
+  // name, an extra of another lift, an accessory this day's plan does not have)
+  // goes in a group named after its exercise, groups in the order first logged.
+  function sortEntries(entries, sections){
+    var slotOwner = {}, secByKey = {}, slotKeys = {};
+    sections.forEach(function(sec){
+      secByKey[sec.key] = sec;
+      sec.slots.forEach(function(s){ slotKeys[s.key] = true; });
+    });
+    entries.forEach(function(e){ if(e.planned && slotKeys[e.planned.key]) slotOwner[e.planned.key] = e; });
+    var extras = {}, groups = [], byName = {};
+    entries.forEach(function(e){
+      var key = e.planned && e.planned.key;
+      if(key && slotOwner[key]===e) return;
+      var m = key && /^(.*):extra$/.exec(key);
+      var sec = m && secByKey[m[1]];
+      if(sec && normName(e.exercise)===normName(sec.exercise)){ (extras[sec.key] = extras[sec.key] || []).push(e); return; }
+      var k = normName(e.exercise);
+      if(!byName[k]){ byName[k] = {key:k, name:String(e.exercise||"Exercise"), entries:[]}; groups.push(byName[k]); }
+      byName[k].entries.push(e);
+    });
+    return {extras:extras, groups:groups};
   }
 
   var currentLogSlots = {}, currentLogSections = {};
@@ -1914,8 +1947,9 @@
         + '<small>'+escapeAttr(state.programTitle)+'</small>';
     }
 
-    var lp = logPlanFor(logDate);
-    document.getElementById("logPlan").innerHTML = planList().map(function(p){
+    var lp = logPlanFor(logDate), asLogged = loggedPlanFor(logDate);
+    document.getElementById("logPlan").innerHTML = (asLogged ? '<option value="'+LOGGED_PLAN+'"'+(lp.id===LOGGED_PLAN ? " selected" : "")+'>As logged: '+escapeAttr(sessions[logDate].programme.title || "plan")+'</option>' : "")
+      + planList().map(function(p){
       return '<option value="'+escapeAttr(p.id)+'"'+(lp && p.id===lp.id ? " selected" : "")+'>'+escapeAttr(planName(p))+'</option>';
     }).join("");
     document.getElementById("logDate").value = logDate;
@@ -1936,26 +1970,39 @@
     currentLogSlots = {};
     currentLogSections = {};
     var html = "";
+    var sections = day ? daySections(day) : [];
+    var sorted = sortEntries(liveEntries(rec), sections);
     if(!day){
       html = '<p class="empty-note">No programme day here. Pick a week and day, or turn the week on in the planner.</p>';
     } else {
-      daySections(day).forEach(function(sec){
+      sections.forEach(function(sec){
         currentLogSections[sec.key] = sec;
         html += '<div class="log-section"><h3>'+escapeAttr(sec.title)+'</h3><div class="log-rows">'
           + sec.slots.map(function(slot){ currentLogSlots[slot.key] = slot; return logRowHTML(slot, rec); }).join("")
-          + extraEntries(rec, sec.key).map(addedRowHTML).join("")
+          + (sorted.extras[sec.key] || []).map(function(e){ return addedRowHTML(e); }).join("")
           + addSetHTML(sec.key)
           + '</div></div>';
       });
     }
-    var adhoc = liveEntries(rec).filter(function(e){ return !e.planned; });
-    if(adhoc.length){
-      var groups = {}, order = [];
-      adhoc.forEach(function(e){ var k = normName(e.exercise); if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(e); });
-      html += order.map(function(k){
-        return '<div class="log-section"><h3>'+escapeAttr(groups[k][0].exercise)+'</h3><div class="log-rows">'+groups[k].map(addedRowHTML).join("")+addSetHTML("adhoc:"+k)+'</div></div>';
-      }).join("");
-    }
+    html += sorted.groups.map(function(g){
+      return '<div class="log-section"><h3>'+escapeAttr(g.name)+'</h3><div class="log-rows">'
+        + g.entries.map(function(e){ return addedRowHTML(e); }).join("")+addSetHTML("adhoc:"+g.key)+'</div></div>';
+    }).join("");
+    // sets logged on this date against another programme day: listed too, by name
+    var full = sessions[logDate], others = {}, otherOrder = [];
+    liveEntries(full).forEach(function(e){
+      var wd = entryDay(e, full);
+      if(wd.week===pick.week && wd.day===pick.day) return;
+      var k = wd.week+"|"+wd.day;
+      if(!others[k]){ others[k] = {wd:wd, entries:[]}; otherOrder.push(k); }
+      others[k].entries.push(e);
+    });
+    html += otherOrder.map(function(k){
+      var o = others[k], od = programmeDay(program, o.wd.week, o.wd.day);
+      var title = (WEEK_LABEL[o.wd.week] || "Week "+o.wd.week)+' · Day '+(od ? od.dayLabel+' '+LIFT_META[od.lift].name : o.wd.day);
+      return '<div class="log-section log-other"><h3>Also on this date: '+escapeAttr(title)+'</h3><div class="log-rows">'
+        + o.entries.map(function(e){ return addedRowHTML(e, true); }).join("")+'</div></div>';
+    }).join("");
     body.innerHTML = html;
   }
   // Updates one row in place rather than replacing it: a "change" fires on blur,
@@ -2130,7 +2177,8 @@
     rerenderLogRow(slot.key);
   });
   // "+ set": one more set of that block's exercise, a copy of the last set
-  // logged there (or of its last planned set when nothing is logged yet)
+  // logged there (or of its last planned set when nothing is logged yet). In a
+  // group named by exercise the copy is unplanned, whatever the last set was.
   function addSetTo(sectionKey){
     var rec = sessionFor(logDate);
     var pick = programmeDayFor(logDate);
@@ -2138,7 +2186,7 @@
     var live = liveEntries(logRec()), last = null, entry;
     if(sectionKey.indexOf("adhoc:")===0){
       var name = sectionKey.slice(6);
-      live.forEach(function(e){ if(!e.planned && normName(e.exercise)===name) last = e; });
+      live.forEach(function(e){ if(normName(e.exercise)===name) last = e; });
       if(!last) return;
       entry = {exercise:last.exercise, planned:null};
     } else {
@@ -2303,21 +2351,20 @@
       rec = {entries:[]};
       recs.forEach(function(r){ rec.entries = rec.entries.concat(r.entries); });
     }
-    var body = daySections(day).map(function(sec, i){
+    var sections = daySections(day);
+    var sorted = sortEntries(liveEntries(rec), sections);
+    var body = sections.map(function(sec, i){
       // like the planner, the main lift's list has no label: the card heading names it
       return '<div>'+(i ? '<div class="section-label">'+escapeAttr(sec.title)+'</div>' : "")+'<div class="set-list">'
         + sec.slots.map(function(slot){ return replayRowHTML(slot, rec); }).join("")
-        + (rec ? extraEntries(rec, sec.key) : []).map(function(e){
+        + (sorted.extras[sec.key] || []).map(function(e){
           return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">added set</span>'+(e.note ? '<span class="replay-note">'+escapeAttr(e.note)+'</span>' : "")+'</div><div class="replay-result">'+escapeAttr(resultText(e))+'</div></div>';
         }).join("")
         + '</div></div>';
     }).join("");
-    var adhoc = liveEntries(rec).filter(function(e){ return !e.planned; });
-    var groups = {}, order = [];
-    adhoc.forEach(function(e){ var k = normName(e.exercise); if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(e); });
-    body += order.map(function(k){
-      return '<div><div class="section-label">'+escapeAttr(groups[k][0].exercise)+' (extra)</div><div class="set-list">'
-        + groups[k].map(function(e){
+    body += sorted.groups.map(function(g){
+      return '<div><div class="section-label">'+escapeAttr(g.name)+' (extra)</div><div class="set-list">'
+        + g.entries.map(function(e){
           return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">'+escapeAttr(resultText(e))+'</span>'
             + (e.note ? '<span class="replay-note">'+escapeAttr(e.note)+'</span>' : "")+'</div></div>';
         }).join("")

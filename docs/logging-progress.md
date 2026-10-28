@@ -104,6 +104,17 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Tests use a fake `navigator.wakeLock` and a controllable `document.visibilityState`.
 - Andy asked for it on dev, a check, then straight to `main`.
 
+### Every logged set in the Log view (28 Oct, bug from Andy)
+- The Log view drew only sets whose key matched the current plan. An extra was shown as a nameless "Added set" in whichever section its key named (bench extras keyed `main:extra` sat under Overhead Press), and a set whose accessory id was not in that day's plan was not shown at all (20 Oct pull-ups on squat day).
+- `sortEntries(entries, sections)` now places every live entry once: in the planned row its key names (the last one logged, if several share a key), as an added set in a section when its key is that section's `:extra` and the exercise names match, otherwise in a group named after its exercise, groups in the order first logged. Used by the Log view and Replay.
+- Sets logged on the same date against another programme day are listed under "Also on this date: <week> · Day <n> <lift>", with their names, still editable. No "+ set" there, since it would stamp the day shown.
+- A past date (before today) whose session has a `programme.state` is drawn from that snapshot: the plan picker gets an "As logged: <plan name>" option, selected by default. Picking a real plan switches to it as before. Today and later still use the plan in effect (or the running session's), so planner edits mid-workout show up. Writes to a past session keep its snapshot, since `touchSession()` copies `state`, which is the snapshot during the swap.
+- "+ set" on a named group copies the last set of that name and saves it unplanned (`planned: null`), the same shape as Add exercise.
+- No change to the record shape, `rev`, merging or Drive files; no migration.
+- Drive: sessions are imported by filename (`sessions/YYYY-MM-DD.json` in the linked folder), plans by `appProperties.planId`. Files written by other tools do not appear because the `drive.file` scope only lists files this app created or opened, not because of missing appProperties.
+- Tests: fixtures shaped like the 28 Oct session (week 4 day 1, bench/dips/chin-up/landmine/calf-raise extras with unknown ids, a deleted set, a day-2 set) and the 20 Oct session (week 2 day 3, pull-ups in the snapshot only). The older "another day" tests now check the "Also on this date" section.
+- Manual check on real data: (1) Log, 28 Oct: one row per live entry, each named, none nameless under Overhead Press. (2) Log, 20 Oct: "As logged" selected, pull-ups shown with their ticks. (3) Start a session on 20 Oct, add a set, sync: `sessions/2026-10-20.json` updates and the other device shows it. (4) Replay, week 4: the 28 Oct extras listed by name.
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 

@@ -985,7 +985,11 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     const doc = dom.doc;
     await wait(150);
     await startLog(dom);
-    const loggedRows = () => doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed, #logBody .log-row.skipped').length;
+    // rows of the day shown; sets of another day on the same date are listed apart, under "Also on this date"
+    const DAY = '#logBody .log-section:not(.log-other) ';
+    const loggedRows = () => doc.querySelectorAll(DAY + '.log-row.done, ' + DAY + '.log-row.changed, ' + DAY + '.log-row.skipped').length;
+    const dayText = () => Array.from(doc.querySelectorAll(DAY + 'h3')).map(h => h.textContent).join('|');
+    const otherText = () => Array.from(doc.querySelectorAll('#logBody .log-other')).map(s => s.textContent).join('|');
     // OHP day: a ticked set, a typed set, an added set and an extra exercise
     rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
     setValue(dom, rowBy(doc, 'main:4').querySelector('[data-act="reps"]'), '4');
@@ -1002,7 +1006,8 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     setValue(dom, doc.getElementById('logDay'), '2');
     await wait(30);
     await startLog(dom);
-    log('switching to another day shows that day\'s plan, nothing logged on it', /Deadlift/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === 0 && !/Pull up/.test(doc.getElementById('logBody').textContent));
+    log('switching to another day shows that day\'s plan, nothing logged on it', /Deadlift/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === 0 && !/Pull up/.test(dayText()));
+    log('the first day\'s sets are listed apart, under Also on this date', /Overhead Press/.test(otherText()) && /Pull up/.test(otherText()) && doc.querySelectorAll('#logBody .log-other [data-entry]').length === 4);
     rowBy(doc, 'main:3').querySelector('[data-act="tick"]').click();
     await wait(30);
     log('a set logged on the second day is marked there', rowBy(doc, 'main:3').classList.contains('done') && loggedRows() === 1);
@@ -1010,7 +1015,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     setValue(dom, doc.getElementById('logDay'), '1');
     await wait(30);
     await startLog(dom);
-    log('switching back, the first day\'s sets are untouched', /Overhead Press/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === ohpLogged && rowBy(doc, 'main:4').querySelector('[data-act="reps"]').value === '4' && /Pull up/.test(doc.getElementById('logBody').textContent));
+    log('switching back, the first day\'s sets are untouched', /Overhead Press/.test(doc.querySelector('#logBody h3').textContent) && loggedRows() === ohpLogged && rowBy(doc, 'main:4').querySelector('[data-act="reps"]').value === '4' && /Pull up/.test(dayText()) && /Deadlift/.test(otherText()));
     const rec = await idbGet(idb, '531-planner', 'sessions', TODAY);
     const live = rec.entries.filter(e => !e.deleted);
     log('each set records the programme day it belongs to', live.filter(e => e.week === 1 && e.day === 1).length === 4 && live.filter(e => e.week === 1 && e.day === 2 && e.exercise === 'Deadlift').length === 1);
@@ -1033,7 +1038,7 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     O.doc.getElementById('changeBtn').click();
     setValue(O, O.doc.getElementById('logDay'), '1');
     await wait(30);
-    log('and do not show on another day', O.doc.querySelectorAll('#logBody .log-row.done, #logBody .log-row.changed').length === 0);
+    log('and do not show on another day\'s plan rows', O.doc.querySelectorAll('#logBody .log-section:not(.log-other) .log-row.done, #logBody .log-section:not(.log-other) .log-row.changed').length === 0 && O.doc.querySelectorAll('#logBody .log-other [data-entry="old1"]').length === 1);
     done(O);
   }
 
@@ -1115,6 +1120,103 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(R);
   }
 
+
+  // ---------------- log view: every logged set, from the session's own plan ----------------
+  // Shaped like Andy's real sessions: 2026-10-28 is week 4 day 1 (OHP) with
+  // extras of other lifts and accessories no plan has; 2026-10-20 is week 2
+  // day 3 (squat) with pull-ups, which the current plan's squat day lacks.
+  {
+    const idb = new IDBFactory();
+    const snap = { programTitle: '2026-09-29 - Cycle 3', template: 'bbb', unit: 'kg', liftOrder: ['ohp', 'deadlift', 'squat', 'bench'],
+      accessories: { ohp: [{ id: 'ex1', name: 'Dip', sets: 3, reps: '10-15', weighted: false, weight: 0 }], bench: [], deadlift: [],
+        squat: [{ id: 'pu1', name: 'Pull-up', sets: 3, reps: '8', weighted: false, weight: 0 }] } };
+    const extra = (id, name, key, w, reps, day) => ({ id, t: '2026-10-28T10:00:00.000Z', exercise: name, weight: w, unit: 'kg', reps, status: 'reps',
+      planned: { key, lift: 'ohp', kind: 'extra', set: null, reps: null, amrap: false, weight: null }, note: '', week: 4, day: day || 1 });
+    const oct28 = [
+      extra('b1', 'Bench Press', 'main:extra', 60, 8),
+      extra('d1', 'Dips', 'acc:zz9:extra', null, 12),
+      extra('c1', 'Chin-up', 'acc:zz7:extra', null, 8),
+      extra('b2', 'Bench Press', 'main:extra', 60, 8),
+      extra('c2', 'Chin-up', 'acc:zz7:extra', null, 7),
+      extra('lr', 'Landmine Row', 'acc:zz5:extra', 25, 10),
+      extra('lt', 'Landmine Rotation', 'acc:zz4:extra', 15, 10),
+      extra('cr', 'Calf Raise', 'acc:zz3:extra', null, 15),
+      Object.assign(extra('gone', 'Calf Raise', 'acc:zz3:extra', null, 15), { deleted: true }),
+      extra('dx', 'Dip', 'acc:ex1:extra', null, 10),
+      extra('dl', 'Deadlift', 'main:extra', 100, 5, 2),
+    ];
+    const tick = (id, key, set) => ({ id, t: '2026-10-20T10:00:00.000Z', exercise: 'Pull-up', weight: null, unit: 'kg', reps: '8', status: 'ticked',
+      planned: { key, lift: 'squat', kind: 'accessory', set, reps: '8', amrap: false, weight: null }, note: '', week: 2, day: 3 });
+    const oct20 = [tick('p1', 'acc:pu1:0', 1), tick('p2', 'acc:pu1:1', 2), Object.assign(extra('p4', 'Pull-up', 'acc:pu1:extra', null, 6), { week: 2, day: 3 })];
+    await idbPut(idb, '531-planner', 'sessions', [
+      { date: '2026-10-28', programme: { title: snap.programTitle, week: 4, day: 1, state: snap }, updated: '2026-10-28T10:00:00.000Z', rev: 0, entries: oct28 },
+      { date: '2026-10-20', programme: { title: snap.programTitle, week: 2, day: 3, state: snap }, updated: '2026-10-20T10:00:00.000Z', rev: 0, entries: oct20 },
+    ]);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    const doc = dom.doc;
+    await wait(200);
+    const showDate = async d => { setValue(dom, doc.getElementById('logDate'), d); await wait(30); };
+    const heads = () => Array.from(doc.querySelectorAll('#logBody .log-section h3')).map(h => h.textContent);
+    const section = name => Array.from(doc.querySelectorAll('#logBody .log-section')).find(s => s.querySelector('h3').textContent === name);
+    const ids = el => Array.from(el.querySelectorAll('[data-entry]')).map(r => r.dataset.entry);
+
+    await showDate('2026-10-28');
+    const all = ids(doc.getElementById('logBody'));
+    log('28 Oct: every live entry is listed once, the deleted one is not', all.length === 10 && new Set(all).size === 10 && all.indexOf('gone') < 0);
+    log('28 Oct: nothing logged as another exercise sits under Overhead Press', ids(section('Overhead Press')).length === 0);
+    const names = heads().filter(h => ['Bench Press', 'Dips', 'Chin-up', 'Landmine Row', 'Landmine Rotation', 'Calf Raise'].indexOf(h) >= 0);
+    log('28 Oct: other exercises are grouped by name, in the order logged', JSON.stringify(names) === '["Bench Press","Dips","Chin-up","Landmine Row","Landmine Rotation","Calf Raise"]'
+      && JSON.stringify(ids(section('Bench Press'))) === '["b1","b2"]' && JSON.stringify(ids(section('Chin-up'))) === '["c1","c2"]');
+    log('28 Oct: an extra of a planned accessory stays in its section', JSON.stringify(ids(section('Dip'))) === '["dx"]');
+    const other = heads().find(h => /^Also on this date:/.test(h));
+    log('28 Oct: a set logged against another day is listed with its name', !!other && /Day 2/.test(other) && /Deadlift/.test(section(other).textContent));
+
+    await showDate('2026-10-20');
+    const sel = doc.getElementById('logPlan');
+    log('20 Oct: the log uses the plan saved with the session', sel.value === 'logged' && /^As logged: 2026-09-29 - Cycle 3/.test(sel.options[sel.selectedIndex].textContent));
+    const pu = section('Pull-up');
+    log('20 Oct: pull-ups show as planned rows from that plan', !!pu && pu.querySelectorAll('[data-slot]').length === 3 && pu.querySelectorAll('[data-slot].done').length === 2 && JSON.stringify(ids(pu)) === '["p4"]');
+    // picking today's plan instead: its squat day has no pull-ups, but the sets are still listed
+    const cur = Array.from(sel.options).find(o => o.value !== 'logged');
+    sel.value = cur.value; fire(dom, sel, 'change');
+    await wait(30);
+    log('20 Oct: under a plan without pull-ups they are still listed, by name', JSON.stringify(ids(section('Pull-up'))) === '["p1","p2","p4"]');
+    sel.value = 'logged'; fire(dom, sel, 'change');
+    await wait(30);
+
+    // "+ set" on a named group
+    await showDate('2026-10-28');
+    await startLog(dom);
+    doc.querySelector('#logBody [data-act="addset"][data-section="adhoc:chin-up"]').click();
+    await wait(300);
+    const s28 = (await idbAll(idb, '531-planner', 'sessions')).find(r => r.date === '2026-10-28');
+    const copy = s28.entries[s28.entries.length - 1];
+    log('+ set on a named group adds an unplanned copy of its last set', copy.exercise === 'Chin-up' && copy.planned === null && copy.reps === 7 && JSON.stringify(ids(section('Chin-up'))) === '["c1","c2","' + copy.id + '"]');
+    doc.getElementById('finishBtn').click();
+    await wait(30);
+
+    // any exercise added to an older session, which keeps the plan saved with it
+    await showDate('2026-10-20');
+    await startLog(dom);
+    setValue(dom, doc.getElementById('addExName'), 'Farmer Carry');
+    setValue(dom, doc.getElementById('addExWeight'), '40');
+    setValue(dom, doc.getElementById('addExReps'), '1');
+    doc.getElementById('addExBtn').click();
+    await wait(30);
+    doc.querySelector('#logBody [data-act="addset"][data-section="adhoc:farmer carry"]').click();
+    await wait(300);
+    const s20 = (await idbAll(idb, '531-planner', 'sessions')).find(r => r.date === '2026-10-20');
+    const fc = s20.entries.filter(e => e.exercise === 'Farmer Carry');
+    log('Add exercise puts any name on an older session, and + set repeats it', fc.length === 2 && fc.every(e => e.weight === 40 && e.reps === 1 && e.planned === null) && ids(section('Farmer Carry')).length === 2 && !!section('Pull-up'));
+    log('writing to an older session keeps its own plan and bumps rev', s20.rev === 2 && s20.programme.title === snap.programTitle && s20.programme.state.accessories.squat[0].id === 'pu1' && s20.entries.length === 5);
+    done(dom);
+
+    const R = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    await wait(200);
+    const card = cardFor(R.doc, 1);
+    log('replay names extras of other exercises instead of hiding them', !!card && /Bench Press \(extra\)/.test(card.textContent) && /Chin-up \(extra\)/.test(card.textContent));
+    done(R);
+  }
 
   // ---------------- several plans ----------------
   {
