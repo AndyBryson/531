@@ -1561,6 +1561,69 @@ function progressFixture(idb) {
     done(dom);
   }
 
+  // ---------------- progress: values ----------------
+  {
+    const idb = new IDBFactory();
+    await progressFixture(idb);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    const vals = line => Array.from(doc.querySelectorAll('#progressChart circle.ppt[data-line="' + line + '"]')).map(c => c.dataset.value).join(',');
+    const click = sel => { const el = doc.querySelector(sel); if (el) el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); };
+    const nInput = () => doc.getElementById('progressN');
+    log('e1RM by week: best set per week, lb converted, deleted/skipped/unparseable ignored', vals('weighted|squat') === '105,122.5,112.3,126.5');
+    const t = doc.querySelector('circle.ppt[data-value="122.5"] title');
+    log('a point title names the set it came from', !!t && /122\.5 kg from 105 × 5, Squat/.test(t.textContent));
+    click('[data-pmode="heavy"]');
+    log('heaviest for 5 by week, gap where no set reached 5', vals('weighted|squat') === '90,105,100');
+    const path = doc.querySelector('path.pline[data-line="weighted|squat"]');
+    log('the gap breaks the line', !!path && (path.getAttribute('d').match(/M/g) || []).length === 2);
+    if (nInput()) {
+      setValue(dom, nInput(), '3');
+      log('heaviest for 3 by week', vals('weighted|squat') === '90,110,102.1,115');
+      click('.chip[data-line="belt|dips"]');
+      setValue(dom, nInput(), '5');
+      log('belt line plots belt weight', vals('belt|dips') === '20,25');
+    } else log('N input exists', false);
+    click('[data-pmode="reps"]');
+    click('.chip[data-line="reps|chin-ups"]');
+    log('best set by week', vals('reps|chin-ups') === '6,8');
+    click('[data-prepsby="session"]');
+    log('best session by week sums one day', vals('reps|chin-ups') === '11,12');
+    const chart = doc.getElementById('progressChart');
+    log('no NaN or Infinity in the chart', !!chart && !/NaN|Infinity/.test(chart.outerHTML));
+    done(dom);
+  }
+  // one point: only Landmine press selected (20 × 10 -> 26.7)
+  {
+    const idb = new IDBFactory();
+    await progressFixture(idb);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    const click = sel => { const el = doc.querySelector(sel); if (el) el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); };
+    ['squat', 'deadlift'].forEach(l => click('.chip[data-line="weighted|' + l + '"]'));
+    click('.chip[data-line="weighted|landmine press"]');
+    const pts = doc.querySelectorAll('#progressChart circle.ppt');
+    const chart = doc.getElementById('progressChart');
+    log('a single point draws one marker with no NaN', pts.length === 1 && pts[0].dataset.value === '26.7' && !/NaN|Infinity/.test(chart.outerHTML));
+    done(dom);
+  }
+  // Sunday and the next Monday are different weeks
+  {
+    const idb = new IDBFactory();
+    const mon = daysFrom(mondayOf(TODAY), -7), sun = daysFrom(mon, -1);
+    const sq = (id, w) => ({ id, t: 'x', exercise: 'Squat', weight: w, unit: 'kg', reps: 5, status: 'reps', planned: { key: 'main:3', lift: 'squat', kind: 'work', set: 1, reps: 5, amrap: false, weight: w }, note: '' });
+    await idbPut(idb, '531-planner', 'sessions', [
+      { date: sun, programme: { title: 'C', week: 1, day: 1, state: null }, updated: 'x', rev: 1, entries: [sq('s1', 100)] },
+      { date: mon, programme: { title: 'C', week: 1, day: 2, state: null }, updated: 'x', rev: 1, entries: [sq('s2', 102.5)] },
+    ]);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    log('Sunday and Monday fall in different weeks', dom.doc.querySelectorAll('#progressChart circle.ppt[data-line="weighted|squat"]').length === 2);
+    done(dom);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

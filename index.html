@@ -16,6 +16,8 @@
     --radius:10px; --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',monospace;
     --sans:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
     --display:'Oswald','Arial Narrow',sans-serif;
+    --line0:#2F6FB3; --line1:#C2452D; --line2:#2F8A5A; --line3:#7A4FB3;
+    --line4:#C27A12; --line5:#1E8C94; --line6:#B3407A; --line7:#5E6B2A;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -23,6 +25,8 @@
       --text:#F1EEE6; --text-dim:#A6A399; --accent:#D8AD52; --accent-contrast:#18191C;
       --accent-soft:#392E1B; --good:#6FBF87; --warn:#E28C5C; --rule:#3A3D42;
       --shadow:0 1px 2px rgba(0,0,0,.45),0 8px 20px rgba(0,0,0,.4);
+      --line0:#6FA8E8; --line1:#EE7A62; --line2:#6FC48F; --line3:#B590E8;
+      --line4:#F0A848; --line5:#5FC6CC; --line6:#E87AB0; --line7:#A8B860;
     }
   }
   :root[data-theme="dark"]{
@@ -30,6 +34,8 @@
     --text:#F1EEE6; --text-dim:#A6A399; --accent:#D8AD52; --accent-contrast:#18191C;
     --accent-soft:#392E1B; --good:#6FBF87; --warn:#E28C5C; --rule:#3A3D42;
     --shadow:0 1px 2px rgba(0,0,0,.45),0 8px 20px rgba(0,0,0,.4);
+    --line0:#6FA8E8; --line1:#EE7A62; --line2:#6FC48F; --line3:#B590E8;
+    --line4:#F0A848; --line5:#5FC6CC; --line6:#E87AB0; --line7:#A8B860;
   }
 
   *{box-sizing:border-box;}
@@ -218,6 +224,15 @@
   button.pchip{cursor:pointer; font-family:var(--sans);}
   button.pchip.on{background:var(--accent-soft); color:var(--text); border-color:var(--accent);}
   button.pchip:disabled{opacity:.4; cursor:default;}
+  .pn-label{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-dim);}
+  .pn-label input{width:64px; font-size:14px; padding:6px 8px;}
+  .progress-chart{width:100%; height:auto; display:block; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);}
+  .progress-chart .pgrid{stroke:var(--rule); stroke-width:1;}
+  .progress-chart text{fill:var(--text-dim); font-family:var(--sans); font-size:12px;}
+  .progress-chart text.plabel{font-weight:600;}
+  .progress-chart .pline{fill:none; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;}
+  .progress-chart .ppt{stroke:var(--surface); stroke-width:1.5; cursor:pointer;}
+  .progress-readout{min-height:1.4em; font-size:13px; color:var(--text-dim); margin-top:8px;}
   .log-head{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
   .log-head input, .log-head select{font-size:15px; padding:9px 10px; flex:1 1 130px;}
   .log-head .log-plan-sel{flex-basis:100%;}
@@ -2617,6 +2632,117 @@
       return '<button type="button" '+attr+'="'+k+'"'+(k===current ? ' class="on"' : '')+'>'+options[k]+'</button>';
     }).join("") + '</div>';
   }
+  var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  // day number since 1970-01-01, from the date string in UTC so DST never moves it
+  function dayNum(iso){ var p = iso.split("-").map(Number); return Math.floor(Date.UTC(p[0], p[1]-1, p[2])/86400000); }
+  function isoOfDay(n){ return new Date(n*86400000).toISOString().slice(0, 10); }
+  function shortDate(n){ var d = new Date(n*86400000); return d.getUTCDate()+" "+MONTHS[d.getUTCMonth()]; }
+  function mondayNum(iso){ var n = dayNum(iso); return n - ((n+4)%7 + 6)%7; }
+  function fmtProgress(v){ return String(Math.round(v*10)/10); }
+  // the group a set's point falls in, for the "Points per" setting
+  function progressGroupKey(st, per){
+    if(per==="session") return st.date;
+    if(per==="plan") return st.plan;
+    return isoOfDay(mondayNum(st.date));
+  }
+  // the groups with at least one counted set, oldest first: {key, x, label}
+  function progressGroups(sets, per){
+    var seen = {}, groups = [];
+    sets.forEach(function(st){
+      var key = progressGroupKey(st, per);
+      if(seen[key]) return;
+      var n = dayNum(st.date);
+      seen[key] = per==="week" ? {key:key, x:mondayNum(st.date), label:"w/c "+shortDate(mondayNum(st.date))} :
+        {key:key, x:n, label:WEEKDAYS[(n+4)%7]+" "+shortDate(n)};
+      groups.push(seen[key]);
+    });
+    return groups.sort(function(a, b){ return a.x-b.x; });
+  }
+  // one series per selected line the mode can plot: a point per group, value
+  // null where that group has no qualifying set (the line breaks there)
+  function progressSeries(sets, groups, ps){
+    var lines = progressLines(sets), classes = PROGRESS_MODES[ps.mode], unit = state.unit;
+    return Object.keys(lines).map(function(k){ return lines[k]; }).filter(function(ln){
+      return classes.indexOf(ln.cls)>=0 && ps.lines.hasOwnProperty(ln.key);
+    }).sort(progressLineOrder).map(function(ln){
+      var best = {}, totals = {};
+      sets.forEach(function(st){
+        if(st.line!==ln.key) return;
+        var g = progressGroupKey(st, ps.per), v = null, why = "";
+        if(ps.mode==="e1rm"){ v = epley1RM(st.weight, st.reps); why = fmtProgress(st.weight)+" × "+st.reps; }
+        else if(ps.mode==="heavy"){ if(st.reps>=ps.n){ v = st.weight; why = fmtProgress(st.weight)+" × "+st.reps; } }
+        else if(ps.repsBy==="session"){
+          var t = totals[g+"|"+st.date] = (totals[g+"|"+st.date]||0) + st.reps;
+          v = t; why = shortDate(dayNum(st.date));
+        }
+        else v = st.reps;
+        if(v===null || v===undefined || !isFinite(v)) return;
+        if(!best[g] || v>best[g].v) best[g] = {v:v, why:why};
+      });
+      var points = groups.map(function(g){
+        var b = best[g.key];
+        if(!b) return {group:g.key, x:g.x, value:null, title:""};
+        var val = fmtProgress(b.v), title = g.label+": ";
+        if(ps.mode==="reps") title += val+" reps"+(ps.repsBy==="session" ? " on "+b.why : "")+", "+ln.label;
+        else title += val+" "+unit+" from "+b.why+", "+ln.label;
+        return {group:g.key, x:g.x, value:Math.round(b.v*10)/10, title:title};
+      });
+      return {line:ln.key, label:ln.label, colour:ps.lines[ln.key]||0, points:points};
+    });
+  }
+  // round tick step for a range, about five ticks
+  function niceStep(range){
+    var raw = range/5, mag = Math.pow(10, Math.floor(Math.log(raw)/Math.LN10)), f = raw/mag;
+    return (f<=1 ? 1 : f<=2 ? 2 : f<=2.5 ? 2.5 : f<=5 ? 5 : 10)*mag;
+  }
+  function progressChartSVG(series, groups, ps){
+    var W = 800, H = 320, L = 52, R = 150, T = 14, B = 34;
+    var vals = [];
+    series.forEach(function(se){ se.points.forEach(function(p){ if(p.value!==null) vals.push(p.value); }); });
+    if(!vals.length) return '<p class="empty-note">No points to show for the selected exercises.</p>';
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if(ps.mode==="reps"){ lo = 0; hi = hi + Math.max(1, hi*0.05); }
+    else { var pad = hi>lo ? (hi-lo)*0.05 : 1; lo -= pad; hi += pad; }
+    var step = niceStep(hi-lo);
+    var xs = groups.map(function(g){ return g.x; }), x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    function X(x){ return x1>x0 ? L + (x-x0)/(x1-x0)*(W-L-R) : L + (W-L-R)/2; }
+    function Y(v){ return T + (hi-v)/(hi-lo)*(H-T-B); }
+    function n1(v){ return Math.round(v*10)/10; }
+    var out = '<svg id="progressChart" class="progress-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Progress chart">';
+    for(var t = Math.ceil(lo/step)*step; t<=hi+1e-9; t += step){
+      out += '<line class="pgrid" x1="'+L+'" x2="'+(W-R)+'" y1="'+n1(Y(t))+'" y2="'+n1(Y(t))+'"/>'
+        + '<text x="'+(L-8)+'" y="'+n1(Y(t)+4)+'" text-anchor="end">'+fmtProgress(t)+'</text>';
+    }
+    // x labels: every group when few (always for plans), else about six
+    var every = ps.per==="plan" ? 1 : Math.max(1, Math.ceil(groups.length/6));
+    groups.forEach(function(g, i){
+      if(i%every && i!==groups.length-1) return;
+      out += '<text class="pxlabel" x="'+n1(X(g.x))+'" y="'+(H-10)+'" text-anchor="middle">'+escapeAttr(g.label)+'</text>';
+    });
+    var labels = [];
+    series.forEach(function(se){
+      var colour = 'var(--line'+se.colour+')', d = "", run = false, last = null;
+      se.points.forEach(function(p){
+        if(p.value===null){ run = false; return; }
+        d += (run ? " L" : " M") + n1(X(p.x)) + " " + n1(Y(p.value));
+        run = true; last = p;
+      });
+      out += '<path class="pline" data-line="'+escapeAttr(se.line)+'" stroke="'+colour+'" d="'+d.trim()+'"/>';
+      se.points.forEach(function(p){
+        if(p.value===null) return;
+        out += '<circle class="ppt" data-line="'+escapeAttr(se.line)+'" data-group="'+escapeAttr(p.group)+'" data-value="'+fmtProgress(p.value)+'" cx="'+n1(X(p.x))+'" cy="'+n1(Y(p.value))+'" r="4.5" fill="'+colour+'"><title>'+escapeAttr(p.title)+'</title></circle>';
+      });
+      if(last) labels.push({y:Y(last.value), x:X(last.x), text:se.label, colour:colour});
+    });
+    // line labels at the last point, nudged apart so they do not overlap
+    labels.sort(function(a, b){ return a.y-b.y; });
+    for(var i=1;i<labels.length;i++) if(labels[i].y-labels[i-1].y<14) labels[i].y = labels[i-1].y+14;
+    labels.forEach(function(lb){
+      out += '<text class="plabel" x="'+n1(lb.x+9)+'" y="'+n1(lb.y+4)+'" style="fill:'+lb.colour+'">'+escapeAttr(lb.text)+'</text>';
+    });
+    return out + '</svg>';
+  }
   function renderProgress(){
     var el = document.getElementById("progressView");
     if(!storeReady){ el.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
@@ -2629,14 +2755,30 @@
       var on = ps.lines.hasOwnProperty(ln.key);
       return '<button type="button" class="chip pchip'+(on ? ' on' : '')+'" data-line="'+escapeAttr(ln.key)+'">'+escapeAttr(ln.label)+'</button>';
     }).join("");
-    el.innerHTML = '<div class="progress-controls">' + progressSegHTML("data-pmode", PROGRESS_MODE_LABELS, ps.mode) + '</div>'
-      + '<div class="progress-chips">' + chips + '</div>';
+    var controls = progressSegHTML("data-pmode", PROGRESS_MODE_LABELS, ps.mode);
+    if(ps.mode==="heavy") controls += '<label class="pn-label">N <input type="number" id="progressN" min="1" step="1" value="'+ps.n+'"></label>';
+    if(ps.mode==="reps") controls += progressSegHTML("data-prepsby", {set:"Best set", session:"Best session"}, ps.repsBy);
+    var groups = progressGroups(sets, ps.per);
+    var series = progressSeries(sets, groups, ps);
+    var chart = series.length ? progressChartSVG(series, groups, ps) : '<p class="empty-note">Pick one or more exercises to plot.</p>';
+    el.innerHTML = '<div class="progress-controls">' + controls + '</div>'
+      + '<div class="progress-chips">' + chips + '</div>' + chart
+      + '<p class="progress-readout" id="progressReadout"></p>';
   }
+  document.getElementById("progressView").addEventListener("change", function(e){
+    if(e.target.id!=="progressN") return;
+    var n = Math.round(parseNum(e.target.value) || 1);
+    progressSettings.n = Math.max(1, n);
+    renderProgress();
+  });
   document.getElementById("progressView").addEventListener("click", function(e){
-    var b = e.target.closest("[data-pmode],[data-line]");
+    var pt = e.target.closest("circle.ppt");
+    if(pt){ var t = pt.querySelector("title"); document.getElementById("progressReadout").textContent = t ? t.textContent : ""; return; }
+    var b = e.target.closest("[data-pmode],[data-prepsby],button[data-line]");
     if(!b || b.disabled) return;
     var ps = progressSettings;
     if(b.dataset.pmode) ps.mode = b.dataset.pmode;
+    else if(b.dataset.prepsby) ps.repsBy = b.dataset.prepsby;
     else if(b.dataset.line){
       var key = b.dataset.line;
       if(ps.lines.hasOwnProperty(key)) delete ps.lines[key];
