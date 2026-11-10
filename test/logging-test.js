@@ -1703,6 +1703,51 @@ function progressFixture(idb) {
     done(dom);
   }
 
+  // ---------------- progress: review fixes ----------------
+  {
+    const idb = new IDBFactory();
+    const base = mondayOf(TODAY);
+    const snap = { programTitle: 'R', unit: 'kg', accessories: { squat: [{ id: 'db', name: 'DB Row', kit: 'dumbbell', weight: 0, sets: 3, reps: '10' }, { id: 'pu', name: 'Pull-ups', kit: 'assisted', band: 'red', sets: 3, reps: '8' }], bench: [], ohp: [], deadlift: [] } };
+    let n = 0;
+    const ent = (exercise, weight, reps, key, extra) => Object.assign({ id: 'r' + (n++), t: 'x', exercise, weight, unit: 'kg', reps, status: 'reps', planned: key ? { key, lift: 'squat' } : null, note: '' }, extra || {});
+    const recs = [];
+    // 14 plans, squat on Mondays and bench on Thursdays
+    for (let w = 0; w < 14; w++) {
+      const mon = daysFrom(base, -7 * (14 - w)), title = daysFrom(base, -7 * 14 + w * 0) + ' - Plan ' + (w < 10 ? '0' : '') + w;
+      recs.push({ date: mon, programme: { title, week: 1, day: 1, state: snap }, updated: 'x', rev: 1, entries: [ent('Squat', 100 + w, 5, 'main:3')] });
+      recs.push({ date: daysFrom(mon, 3), programme: { title, week: 1, day: 2, state: snap }, updated: 'x', rev: 1, entries: [ent('Bench Press', 80, 5, 'main:3')] });
+    }
+    recs[0].entries.push(ent('DB Row', 0, 10, 'acc:db:0'));
+    recs[0].entries.push(ent('Pull-ups', null, 6, 'acc:pu:0', { band: 'red band, assisted' }));
+    recs[0].entries.push(ent('Pull-ups', null, 9, 'acc:pu:extra', { band: 'red band, assisted' }));
+    await idbPut(idb, '531-planner', 'sessions', recs);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(300);
+    const { doc } = dom;
+    const click = sel => { const el = doc.querySelector(sel); if (el) el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); };
+    const chips = () => Array.from(doc.querySelectorAll('#progressView .chip')).map(c => c.textContent.trim());
+    log('a weighted kit with no weight is not given an e1RM', !chips().includes('DB Row'));
+    click('[data-pper="session"]');
+    const sq = doc.querySelector('path.pline[data-line="weighted|squat"]');
+    log('points per session join a line across sessions of other lifts', !!sq && (sq.getAttribute('d').match(/M/g) || []).length === 1);
+    click('[data-pper="plan"]');
+    log('plan labels are thinned when there are many plans', doc.querySelectorAll('#progressChart text.pxlabel').length <= 7);
+    click('[data-pmode="reps"]');
+    log('a weighted kit with no weight counts as reps work', chips().includes('DB Row'));
+    log('an added set on an assisted accessory stays assisted', !chips().includes('Pull-ups') && chips().includes('Pull-ups (Asst red band)'));
+    click('.chip[data-line="assisted|pull-ups|red band"]');
+    click('[data-pper="week"]');
+    log('the added assisted set counts on the assisted line', Array.from(doc.querySelectorAll('circle.ppt[data-line="assisted|pull-ups|red band"]')).map(c => c.dataset.value).join(',') === '9');
+    // phone width: a narrower drawing and bigger tap targets
+    Object.defineProperty(doc.getElementById('progressView'), 'clientWidth', { configurable: true, get: () => 343 });
+    click('[data-pmode="e1rm"]');
+    const vb = (doc.getElementById('progressChart').getAttribute('viewBox') || '').split(' ').map(Number);
+    const hits = doc.querySelectorAll('#progressChart circle.phit');
+    log('at phone width the chart is drawn narrower so text stays readable', vb[2] > 0 && vb[2] < 600);
+    log('every point has a larger tap target', hits.length > 0 && hits.length === doc.querySelectorAll('#progressChart circle.ppt').length && Number(hits[0].getAttribute('r')) >= 12);
+    done(dom);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();
