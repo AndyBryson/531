@@ -1624,6 +1624,29 @@ function progressFixture(idb) {
     done(dom);
   }
 
+  // ---------------- progress: grouping and range ----------------
+  {
+    const idb = new IDBFactory();
+    await progressFixture(idb);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    const vals = line => Array.from(doc.querySelectorAll('#progressChart circle.ppt[data-line="' + line + '"]')).map(c => c.dataset.value).join(',');
+    const click = sel => { const el = doc.querySelector(sel); if (el) el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); };
+    click('[data-pper="session"]');
+    log('points per session', vals('weighted|squat') === '105,121,122.5,112.3,126.5');
+    click('[data-pper="plan"]');
+    log('points per plan', vals('weighted|squat') === '105,122.5,126.5');
+    log('plan points are labelled with plan names', Array.from(doc.querySelectorAll('#progressChart text.pxlabel')).map(t => t.textContent).join('|') === 'Cycle 0|Cycle 1|Cycle 2');
+    click('[data-pper="week"]');
+    const range = doc.getElementById('progressRange');
+    if (range) setValue(dom, range, '12w');
+    log('last 12 weeks drops the old session', vals('weighted|squat') === '122.5,112.3,126.5');
+    const dl = doc.querySelector('.chip[data-line="weighted|deadlift"]');
+    log('a chip with nothing in range is greyed out', !!dl && dl.classList.contains('empty') && dl.disabled);
+    done(dom);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

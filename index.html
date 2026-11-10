@@ -226,6 +226,7 @@
   button.pchip:disabled{opacity:.4; cursor:default;}
   .pn-label{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-dim);}
   .pn-label input{width:64px; font-size:14px; padding:6px 8px;}
+  #progressRange{font-size:13px; padding:6px 8px;}
   .progress-chart{width:100%; height:auto; display:block; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);}
   .progress-chart .pgrid{stroke:var(--rule); stroke-width:1;}
   .progress-chart text{fill:var(--text-dim); font-family:var(--sans); font-size:12px;}
@@ -2646,18 +2647,33 @@
     if(per==="plan") return st.plan;
     return isoOfDay(mondayNum(st.date));
   }
-  // the groups with at least one counted set, oldest first: {key, x, label}
+  // the groups with at least one counted set, oldest first: {key, x, label}.
+  // Session and week sit on a date axis; plans are evenly spaced, ordered by
+  // the date their name starts with, else by their first session
   function progressGroups(sets, per){
     var seen = {}, groups = [];
     sets.forEach(function(st){
       var key = progressGroupKey(st, per);
       if(seen[key]) return;
       var n = dayNum(st.date);
-      seen[key] = per==="week" ? {key:key, x:mondayNum(st.date), label:"w/c "+shortDate(mondayNum(st.date))} :
-        {key:key, x:n, label:WEEKDAYS[(n+4)%7]+" "+shortDate(n)};
+      if(per==="week") seen[key] = {key:key, x:mondayNum(st.date), label:"w/c "+shortDate(mondayNum(st.date))};
+      else if(per==="plan"){
+        var lead = /^\d{4}-\d{2}-\d{2}/.exec(key);
+        seen[key] = {key:key, x:lead ? dayNum(lead[0]) : n, label:key.length>24 ? key.slice(0, 23)+"…" : (key || "Unnamed plan")};
+      }
+      else seen[key] = {key:key, x:n, label:WEEKDAYS[(n+4)%7]+" "+shortDate(n)};
       groups.push(seen[key]);
     });
-    return groups.sort(function(a, b){ return a.x-b.x; });
+    groups.sort(function(a, b){ return a.x-b.x; });
+    if(per==="plan") groups.forEach(function(g, i){ g.x = i; });
+    return groups;
+  }
+  var PROGRESS_RANGES = {all:["All time", 0], "12w":["Last 12 weeks", 84], "6m":["Last 6 months", 182], "1y":["Last year", 365]};
+  function progressInRange(sets, range){
+    var days = (PROGRESS_RANGES[range] || PROGRESS_RANGES.all)[1];
+    if(!days) return sets;
+    var cut = dayNum(isoDate(new Date())) - days;
+    return sets.filter(function(st){ return dayNum(st.date)>=cut; });
   }
   // one series per selected line the mode can plot: a point per group, value
   // null where that group has no qualifying set (the line breaks there)
@@ -2746,26 +2762,34 @@
   function renderProgress(){
     var el = document.getElementById("progressView");
     if(!storeReady){ el.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
-    var sets = progressSets();
-    if(!sets.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Log a session and it will show here.</p>'; return; }
-    var ps = progressSettings, lines = progressLines(sets), classes = PROGRESS_MODES[ps.mode];
+    var all = progressSets();
+    if(!all.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Log a session and it will show here.</p>'; return; }
+    var ps = progressSettings, lines = progressLines(all), classes = PROGRESS_MODES[ps.mode];
+    var sets = progressInRange(all, ps.range), inRange = {};
+    sets.forEach(function(st){ inRange[st.line] = true; });
     var shown = Object.keys(lines).map(function(k){ return lines[k]; })
       .filter(function(ln){ return classes.indexOf(ln.cls)>=0; }).sort(progressLineOrder);
     var chips = shown.map(function(ln){
-      var on = ps.lines.hasOwnProperty(ln.key);
-      return '<button type="button" class="chip pchip'+(on ? ' on' : '')+'" data-line="'+escapeAttr(ln.key)+'">'+escapeAttr(ln.label)+'</button>';
+      var on = ps.lines.hasOwnProperty(ln.key), empty = !inRange[ln.key];
+      return '<button type="button" class="chip pchip'+(on ? ' on' : '')+(empty ? ' empty' : '')+'" data-line="'+escapeAttr(ln.key)+'"'
+        +(empty ? ' disabled title="Nothing logged in this range"' : '')+'>'+escapeAttr(ln.label)+'</button>';
     }).join("");
     var controls = progressSegHTML("data-pmode", PROGRESS_MODE_LABELS, ps.mode);
     if(ps.mode==="heavy") controls += '<label class="pn-label">N <input type="number" id="progressN" min="1" step="1" value="'+ps.n+'"></label>';
     if(ps.mode==="reps") controls += progressSegHTML("data-prepsby", {set:"Best set", session:"Best session"}, ps.repsBy);
+    controls += '<span class="pn-label">Points per</span>' + progressSegHTML("data-pper", {session:"Session", week:"Week", plan:"Plan"}, ps.per);
+    controls += '<select id="progressRange" aria-label="Time range">' + Object.keys(PROGRESS_RANGES).map(function(k){
+      return '<option value="'+k+'"'+(k===ps.range ? ' selected' : '')+'>'+PROGRESS_RANGES[k][0]+'</option>';
+    }).join("") + '</select>';
     var groups = progressGroups(sets, ps.per);
-    var series = progressSeries(sets, groups, ps);
+    var series = progressSeries(sets, groups, ps).filter(function(se){ return inRange[se.line]; });
     var chart = series.length ? progressChartSVG(series, groups, ps) : '<p class="empty-note">Pick one or more exercises to plot.</p>';
     el.innerHTML = '<div class="progress-controls">' + controls + '</div>'
       + '<div class="progress-chips">' + chips + '</div>' + chart
       + '<p class="progress-readout" id="progressReadout"></p>';
   }
   document.getElementById("progressView").addEventListener("change", function(e){
+    if(e.target.id==="progressRange"){ progressSettings.range = e.target.value; renderProgress(); return; }
     if(e.target.id!=="progressN") return;
     var n = Math.round(parseNum(e.target.value) || 1);
     progressSettings.n = Math.max(1, n);
@@ -2774,11 +2798,12 @@
   document.getElementById("progressView").addEventListener("click", function(e){
     var pt = e.target.closest("circle.ppt");
     if(pt){ var t = pt.querySelector("title"); document.getElementById("progressReadout").textContent = t ? t.textContent : ""; return; }
-    var b = e.target.closest("[data-pmode],[data-prepsby],button[data-line]");
+    var b = e.target.closest("[data-pmode],[data-prepsby],[data-pper],button[data-line]");
     if(!b || b.disabled) return;
     var ps = progressSettings;
     if(b.dataset.pmode) ps.mode = b.dataset.pmode;
     else if(b.dataset.prepsby) ps.repsBy = b.dataset.prepsby;
+    else if(b.dataset.pper) ps.per = b.dataset.pper;
     else if(b.dataset.line){
       var key = b.dataset.line;
       if(ps.lines.hasOwnProperty(key)) delete ps.lines[key];
