@@ -1647,6 +1647,62 @@ function progressFixture(idb) {
     done(dom);
   }
 
+  // ---------------- progress: settings remembered ----------------
+  {
+    const idb = new IDBFactory();
+    await progressFixture(idb);
+    let dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const click = (d, sel) => { const el = d.doc.querySelector(sel); if (el) el.dispatchEvent(new d.window.MouseEvent('click', { bubbles: true })); };
+    click(dom, '[data-pmode="reps"]');
+    click(dom, '.chip[data-line="reps|chin-ups"]');
+    click(dom, '[data-pper="plan"]');
+    await wait(100);
+    done(dom);
+    dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    const on = sel => { const el = doc.querySelector(sel); return !!el && el.classList.contains('on'); };
+    log('mode is remembered on the device', on('[data-pmode="reps"]'));
+    log('points per is remembered', on('[data-pper="plan"]'));
+    log('chip selection is remembered', on('.chip[data-line="reps|chin-ups"]'));
+    const meta = await idbGet(idb, '531-planner', 'meta', 'progress');
+    log('settings are kept in meta, not in the plan', !!meta && meta.mode === 'reps');
+    done(dom);
+  }
+
+  // assisted lines are dashed, others solid
+  {
+    const idb = new IDBFactory();
+    await progressFixture(idb);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    const click = sel => { const el = doc.querySelector(sel); if (el) el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); };
+    click('[data-pmode="reps"]');
+    click('.chip[data-line="assisted|pull-ups|15-35 kg band"]');
+    click('.chip[data-line="reps|chin-ups"]');
+    const asst = doc.querySelector('path.pline[data-line="assisted|pull-ups|15-35 kg band"]');
+    const chin = doc.querySelector('path.pline[data-line="reps|chin-ups"]');
+    log('assisted lines are dashed, unassisted solid', !!asst && !!asst.getAttribute('stroke-dasharray') && !!chin && !chin.getAttribute('stroke-dasharray'));
+    done(dom);
+  }
+
+  // reps axis ticks are whole numbers
+  {
+    const idb = new IDBFactory();
+    await progressFixture(idb);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    const click = sel => { const el = doc.querySelector(sel); if (el) el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); };
+    click('[data-pmode="reps"]');
+    click('.chip[data-line="reps|chin-ups"]');
+    const ticks = Array.from(doc.querySelectorAll('#progressChart text.pylabel')).map(t => t.textContent);
+    log('reps axis ticks are whole numbers', ticks.length > 1 && ticks.every(t => /^\d+$/.test(t)));
+    done(dom);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

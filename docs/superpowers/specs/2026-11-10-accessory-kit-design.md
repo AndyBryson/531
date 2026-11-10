@@ -54,7 +54,7 @@ Every weighted accessory is currently treated as a barbell lift: the bar's weigh
 
 ## Calls for the builder (settle them sensibly and note what you chose)
 
-- Log view and replay for Band and Assisted: the planned slot has `weight:null` and carries the band text. A logged band set records the band text (a new optional `band` field on the entry) rather than a kg number. The Log and Replay text shows the band text where it would otherwise say "BW". (The app has no volume or e1RM totals, so nothing else needs to change.)
+- Log view and replay for Band and Assisted: the planned slot has `weight:null` and carries the band text. A logged band set records the band text (a new optional `band` field on the entry) rather than a kg number. The Log and Replay text shows the band text where it would otherwise say "BW". (When this was written the app had no volume or e1RM totals. The Progress tab, added later, reads band and assisted sets as reps-only work; see `2026-11-10-progress-plots-design.md`.)
 - Ad-hoc exercises added in the Log view ("add exercise", around line 2256) keep their current numeric weight and get no kit choice in this change.
 - Text export (around line 2858): include the kit label and the band text.
 - Exact styling of the label badge and dropdown, as long as print still fits.

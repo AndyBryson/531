@@ -2559,6 +2559,20 @@
     return {mode:"e1rm", n:5, repsBy:"set", per:"week", range:"all", lines:lines};
   }
   var progressSettings = defaultProgressSettings();
+  // remembered on this device only (IndexedDB meta, never synced), like Keep screen on
+  function loadProgressSettings(saved){
+    var d = defaultProgressSettings();
+    if(saved && typeof saved==="object"){
+      Object.keys(d).forEach(function(k){ if(saved.hasOwnProperty(k) && k!=="lines") d[k] = saved[k]; });
+      if(saved.lines && typeof saved.lines==="object") d.lines = saved.lines;
+    }
+    if(!PROGRESS_MODES[d.mode]) d.mode = "e1rm";
+    d.n = Math.max(1, Math.round(Number(d.n)) || 5);
+    return d;
+  }
+  function saveProgressSettings(){
+    if(store) store.setMeta("progress", clone(progressSettings)).catch(noop);
+  }
 
   // the kit a logged set was done with: main and light sets are barbell, an
   // accessory is looked up by id in the plan copy saved with its session.
@@ -2704,7 +2718,7 @@
         else title += val+" "+unit+" from "+b.why+", "+ln.label;
         return {group:g.key, x:g.x, value:Math.round(b.v*10)/10, title:title};
       });
-      return {line:ln.key, label:ln.label, colour:ps.lines[ln.key]||0, points:points};
+      return {line:ln.key, label:ln.label, cls:ln.cls, colour:ps.lines[ln.key]||0, points:points};
     });
   }
   // round tick step for a range, about five ticks
@@ -2721,6 +2735,7 @@
     if(ps.mode==="reps"){ lo = 0; hi = hi + Math.max(1, hi*0.05); }
     else { var pad = hi>lo ? (hi-lo)*0.05 : 1; lo -= pad; hi += pad; }
     var step = niceStep(hi-lo);
+    if(ps.mode==="reps") step = Math.max(1, Math.round(step)); // no half reps
     var xs = groups.map(function(g){ return g.x; }), x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
     function X(x){ return x1>x0 ? L + (x-x0)/(x1-x0)*(W-L-R) : L + (W-L-R)/2; }
     function Y(v){ return T + (hi-v)/(hi-lo)*(H-T-B); }
@@ -2728,7 +2743,7 @@
     var out = '<svg id="progressChart" class="progress-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Progress chart">';
     for(var t = Math.ceil(lo/step)*step; t<=hi+1e-9; t += step){
       out += '<line class="pgrid" x1="'+L+'" x2="'+(W-R)+'" y1="'+n1(Y(t))+'" y2="'+n1(Y(t))+'"/>'
-        + '<text x="'+(L-8)+'" y="'+n1(Y(t)+4)+'" text-anchor="end">'+fmtProgress(t)+'</text>';
+        + '<text class="pylabel" x="'+(L-8)+'" y="'+n1(Y(t)+4)+'" text-anchor="end">'+fmtProgress(t)+'</text>';
     }
     // x labels: every group when few (always for plans), else about six
     var every = ps.per==="plan" ? 1 : Math.max(1, Math.ceil(groups.length/6));
@@ -2744,7 +2759,7 @@
         d += (run ? " L" : " M") + n1(X(p.x)) + " " + n1(Y(p.value));
         run = true; last = p;
       });
-      out += '<path class="pline" data-line="'+escapeAttr(se.line)+'" stroke="'+colour+'" d="'+d.trim()+'"/>';
+      out += '<path class="pline" data-line="'+escapeAttr(se.line)+'" stroke="'+colour+'"'+(se.cls==="assisted" ? ' stroke-dasharray="7 5"' : '')+' d="'+d.trim()+'"/>';
       se.points.forEach(function(p){
         if(p.value===null) return;
         out += '<circle class="ppt" data-line="'+escapeAttr(se.line)+'" data-group="'+escapeAttr(p.group)+'" data-value="'+fmtProgress(p.value)+'" cx="'+n1(X(p.x))+'" cy="'+n1(Y(p.value))+'" r="4.5" fill="'+colour+'"><title>'+escapeAttr(p.title)+'</title></circle>';
@@ -2789,10 +2804,11 @@
       + '<p class="progress-readout" id="progressReadout"></p>';
   }
   document.getElementById("progressView").addEventListener("change", function(e){
-    if(e.target.id==="progressRange"){ progressSettings.range = e.target.value; renderProgress(); return; }
+    if(e.target.id==="progressRange"){ progressSettings.range = e.target.value; saveProgressSettings(); renderProgress(); return; }
     if(e.target.id!=="progressN") return;
     var n = Math.round(parseNum(e.target.value) || 1);
     progressSettings.n = Math.max(1, n);
+    saveProgressSettings();
     renderProgress();
   });
   document.getElementById("progressView").addEventListener("click", function(e){
@@ -2813,6 +2829,7 @@
         ps.lines[key] = c;
       }
     }
+    saveProgressSettings();
     renderProgress();
   });
 
@@ -3393,13 +3410,14 @@
   // programme; without one, the saved programme is loaded.
   var storeLoaded = openStore().then(function(st){
     store = st;
-    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link"), st.getMeta("activeSession"), st.getMeta("plans"), st.getMeta("editingPlan"), st.getMeta("keepScreenOn")]);
+    return Promise.all([st.getMeta("programme"), st.allSessions(), st.getMeta("link"), st.getMeta("activeSession"), st.getMeta("plans"), st.getMeta("editingPlan"), st.getMeta("keepScreenOn"), st.getMeta("progress")]);
   }).then(function(res){
     var oldProgramme = res[0];
     (res[1]||[]).forEach(function(rec){ sessions[rec.date] = rec; });
     link = res[2] || null;
     activeSession = res[3] || null;
     keepScreenOn = res[6]===true;
+    progressSettings = loadProgressSettings(res[7]);
     document.getElementById("wakeCheck").checked = keepScreenOn;
     plans = res[4] || {};
     // the single programme saved before plans existed becomes the first plan

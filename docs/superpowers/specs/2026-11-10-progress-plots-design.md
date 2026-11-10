@@ -80,7 +80,7 @@ Works at phone width (chips wrap, chart scales to width), designed for the lapto
 
 - Match CLAUDE.md: ES5, `var`, string-built HTML, `render()`, no dependencies, UK English, no em dashes.
 - Reading sessions: all sessions are already in memory in `sessions` (loaded at startup, merged into by sync). Progress reads that and re-renders when a sync changes it.
-- Depends on the kit work being in (`kitOf()`, `bandText()`). Its Task 3 (entries carry `band`) was not built at the time of writing; Progress does not need it, since band text is read from the plan copy.
+- Depends on the kit work being in (`kitOf()`, `bandText()`). Entries now carry `band` (kit Task 3); Progress uses it when present and otherwise reads the band text from the plan copy.
 - Update the README features list.
 - Tests in the style of `test/logging-test.js`: seed sessions with fake-indexeddb, open `#v=progress`, assert on the computed points and the SVG/chip DOM. Cover: e1RM best-of-week, Heaviest for N with a gap, ticked `"5+"` counted as 5, kg/lb conversion, deleted and skipped sets ignored, belt excluded from e1RM, assisted split by band, Plan grouping, Best session totals.
 - Add `.superpowers/` to `.gitignore` (mockups from this brainstorm live there).
