@@ -211,6 +211,13 @@
   .log-view, .replay-view{max-width:680px; margin:0 auto; padding-block:16px 80px;}
   .replay-view{max-width:1440px;}
   .progress-view{max-width:1100px; margin:0 auto; padding-block:16px 80px;}
+  .progress-controls{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px;}
+  .pseg button{flex:none; padding:7px 12px;}
+  .pseg button.on{background:var(--accent); color:var(--accent-contrast);}
+  .progress-chips{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;}
+  button.pchip{cursor:pointer; font-family:var(--sans);}
+  button.pchip.on{background:var(--accent-soft); color:var(--text); border-color:var(--accent);}
+  button.pchip:disabled{opacity:.4; cursor:default;}
   .log-head{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
   .log-head input, .log-head select{font-size:15px; padding:9px 10px; flex:1 1 130px;}
   .log-head .log-plan-sel{flex-basis:100%;}
@@ -2525,12 +2532,122 @@
   // ---------------- progress ----------------
   // A read-only look back over every logged session: lines over time per
   // exercise, so Andy can see whether he is getting stronger.
+  // Which line classes each mode can plot. Dip-belt weight leaves out bodyweight,
+  // so belt work gets no e1RM; reps-only work has no weight to plot.
+  var PROGRESS_MODES = {e1rm:["weighted"], heavy:["weighted","belt"], reps:["reps","assisted"]};
+  var PROGRESS_MODE_LABELS = {e1rm:"Est. 1RM", heavy:"Heaviest for N reps", reps:"Reps"};
+  var LB_PER_KG = 2.20462;
+  function defaultProgressSettings(){
+    var lines = {};
+    LIFTS.forEach(function(l, i){ lines["weighted|"+normName(LIFT_META[l].name)] = i; });
+    return {mode:"e1rm", n:5, repsBy:"set", per:"week", range:"all", lines:lines};
+  }
+  var progressSettings = defaultProgressSettings();
+
+  // the kit a logged set was done with: main and light sets are barbell, an
+  // accessory is looked up by id in the plan copy saved with its session.
+  // null when unknown (no plan copy, an ad hoc set, an id no longer in the plan)
+  function progressKit(e, rec){
+    var key = (e.planned && e.planned.key) || "";
+    if(/^(main|light):/.test(key)) return {kit:"barbell", band:""};
+    var m = /^acc:(.+):\d+$/.exec(key);
+    var snap = rec.programme && rec.programme.state;
+    if(!m || !snap || !snap.accessories) return null;
+    var found = null;
+    Object.keys(snap.accessories).forEach(function(l){
+      (snap.accessories[l]||[]).forEach(function(ex){ if(ex && ex.id===m[1]) found = ex; });
+    });
+    if(!found) return null;
+    return {kit:kitOf(found), band:e.band || bandText(found)};
+  }
+  // every set that counts, flattened and classed, oldest first:
+  // {date, plan, line, name, cls, weight (in state.unit, or null), reps, band}
+  function progressSets(){
+    var out = [], beltNames = {};
+    Object.keys(sessions).sort().forEach(function(date){
+      var rec = sessions[date];
+      (rec.entries||[]).forEach(function(e){
+        if(e.deleted || (e.status!=="ticked" && e.status!=="reps")) return;
+        var reps = parseNum(e.reps);
+        if(reps===null || reps<1) return;
+        var w = typeof e.weight==="number" && isFinite(e.weight) ? e.weight : null;
+        if(w!==null && e.unit && e.unit!==state.unit) w = e.unit==="lb" ? w/LB_PER_KG : w*LB_PER_KG;
+        if(w!==null) w = Math.round(w*10)/10;
+        var k = progressKit(e, rec), cls;
+        if(k){
+          cls = k.kit==="belt" ? "belt" : k.kit==="assisted" ? "assisted" : (k.kit==="band" || k.kit==="bodyweight") ? "reps" : "weighted";
+        } else cls = w>0 ? "weighted" : "reps";
+        var name = String(e.exercise||"").trim().replace(/\s+/g," ") || "Exercise";
+        var set = {date:date, plan:(rec.programme && rec.programme.title) || "", name:name, nk:normName(name), cls:cls,
+          weight:(cls==="weighted" || cls==="belt") ? w : null, reps:Math.floor(reps), known:!!k,
+          band:cls==="assisted" ? String(k.band||"Band").replace(/, assisted$/,"") : ""};
+        if(cls==="belt") beltNames[set.nk] = true;
+        out.push(set);
+      });
+    });
+    out.forEach(function(st){
+      // an ad hoc weighted set of a belt exercise is belt work too: never an e1RM
+      if(st.cls==="weighted" && !st.known && beltNames[st.nk]) st.cls = "belt";
+      st.line = st.cls+"|"+st.nk+(st.cls==="assisted" ? "|"+normName(st.band) : "");
+    });
+    return out;
+  }
+  // one entry per line: {key, label, cls}, labelled with the latest spelling
+  function progressLines(sets){
+    var lines = {}, clsByName = {};
+    sets.forEach(function(st){
+      lines[st.line] = {key:st.line, name:st.name, nk:st.nk, cls:st.cls, band:st.band};
+      (clsByName[st.nk] = clsByName[st.nk] || {})[st.cls] = true;
+    });
+    Object.keys(lines).forEach(function(k){
+      var ln = lines[k], other = clsByName[ln.nk];
+      ln.label = ln.name + (ln.cls==="belt" ? " (Belt)" : ln.cls==="assisted" ? " (Asst "+ln.band+")" :
+        ln.cls==="reps" && (other.weighted || other.belt) ? " (BW)" : "");
+    });
+    return lines;
+  }
+  function progressLineOrder(a, b){
+    var main = LIFTS.map(function(l){ return normName(LIFT_META[l].name); });
+    var ia = a.cls==="weighted" ? main.indexOf(a.nk) : -1, ib = b.cls==="weighted" ? main.indexOf(b.nk) : -1;
+    if(ia<0) ia = 99; if(ib<0) ib = 99;
+    return ia!==ib ? ia-ib : a.label.toLowerCase()<b.label.toLowerCase() ? -1 : a.label.toLowerCase()>b.label.toLowerCase() ? 1 : 0;
+  }
+  function progressSegHTML(attr, options, current){
+    return '<div class="seg pseg">' + Object.keys(options).map(function(k){
+      return '<button type="button" '+attr+'="'+k+'"'+(k===current ? ' class="on"' : '')+'>'+options[k]+'</button>';
+    }).join("") + '</div>';
+  }
   function renderProgress(){
     var el = document.getElementById("progressView");
     if(!storeReady){ el.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
-    if(!Object.keys(sessions).length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Log a session and it will show here.</p>'; return; }
-    el.innerHTML = "";
+    var sets = progressSets();
+    if(!sets.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Log a session and it will show here.</p>'; return; }
+    var ps = progressSettings, lines = progressLines(sets), classes = PROGRESS_MODES[ps.mode];
+    var shown = Object.keys(lines).map(function(k){ return lines[k]; })
+      .filter(function(ln){ return classes.indexOf(ln.cls)>=0; }).sort(progressLineOrder);
+    var chips = shown.map(function(ln){
+      var on = ps.lines.hasOwnProperty(ln.key);
+      return '<button type="button" class="chip pchip'+(on ? ' on' : '')+'" data-line="'+escapeAttr(ln.key)+'">'+escapeAttr(ln.label)+'</button>';
+    }).join("");
+    el.innerHTML = '<div class="progress-controls">' + progressSegHTML("data-pmode", PROGRESS_MODE_LABELS, ps.mode) + '</div>'
+      + '<div class="progress-chips">' + chips + '</div>';
   }
+  document.getElementById("progressView").addEventListener("click", function(e){
+    var b = e.target.closest("[data-pmode],[data-line]");
+    if(!b || b.disabled) return;
+    var ps = progressSettings;
+    if(b.dataset.pmode) ps.mode = b.dataset.pmode;
+    else if(b.dataset.line){
+      var key = b.dataset.line;
+      if(ps.lines.hasOwnProperty(key)) delete ps.lines[key];
+      else {
+        var used = Object.keys(ps.lines).map(function(k){ return ps.lines[k]; }), c = 0;
+        while(used.indexOf(c)>=0 && c<7) c++;
+        ps.lines[key] = c;
+      }
+    }
+    renderProgress();
+  });
 
   // ---------------- Google Drive sync ----------------
   // The programme and every session are mirrored to a "531 Planner" folder in

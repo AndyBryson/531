@@ -194,6 +194,52 @@ async function editingPlan(factory, dbName) {
 }
 const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + act + '"]');
 
+// Sessions for the Progress tab tests: several weeks and plans, an entry in lb,
+// deleted, skipped and unparseable sets, a session with no plan copy, belt and
+// assisted accessories, two spellings of one exercise. Expected values are in
+// docs/superpowers/plans/2026-11-10-progress-plots.md.
+function progressFixture(idb) {
+  const base = mondayOf(TODAY);
+  const W0 = daysFrom(base, -21), W1 = daysFrom(base, -14), W2 = daysFrom(base, -7), OLD = daysFrom(base, -210);
+  const snap = title => ({ programTitle: title, unit: 'kg', accessories: {
+    squat: [{ id: 'dp', name: 'Dips', kit: 'belt', weight: 20, sets: 3, reps: '5' }, { id: 'pu', name: 'Pull-ups', kit: 'assisted', band: '15-35 kg', sets: 3, reps: '8' }],
+    bench: [{ id: 'ch', name: 'Chin-ups', kit: 'bodyweight', weight: 0, sets: 3, reps: '8' }], ohp: [], deadlift: [] } });
+  let n = 0;
+  const ent = (exercise, weight, reps, extra) => Object.assign({ id: 'p' + (n++), t: 'x', exercise, weight, unit: 'kg', reps, status: 'reps', planned: null, note: '' }, extra || {});
+  const main = (lift, i) => ({ planned: { key: 'main:' + i, lift, kind: 'work', set: 1, reps: 5, amrap: false, weight: 0 } });
+  const acc = (id, i, lift) => ({ planned: { key: 'acc:' + id + ':' + i, lift, kind: 'accessory', set: i + 1, reps: '8', amrap: false, weight: null } });
+  const rec = (date, title, state, entries) => ({ date, programme: { title, week: 1, day: 1, state }, updated: date + 'T18:00:00Z', rev: 1, entries });
+  return idbPut(idb, '531-planner', 'sessions', [
+    rec(OLD, 'Cycle 0', snap('Cycle 0'), [ent('Squat', 90, 5, main('squat', 3)), ent('Deadlift', 140, 3, main('deadlift', 3))]),
+    rec(W0, 'Cycle 1', snap('Cycle 1'), [
+      ent('Squat', 60, '5', Object.assign({ status: 'ticked' }, main('squat', 0))),
+      ent('Squat', 110, 3, main('squat', 4)),
+      ent('Dips', 20, 5, acc('dp', 0, 'squat')),
+      ent('Pull-ups', null, 8, Object.assign({ band: '15-35 kg band, assisted' }, acc('pu', 0, 'squat'))),
+    ]),
+    rec(daysFrom(W0, 3), 'Cycle 1', snap('Cycle 1'), [
+      ent('Squat', 105, '5+', Object.assign({ status: 'ticked' }, main('squat', 5))),
+      ent('Chin-ups', null, 6, acc('ch', 0, 'bench')),
+      ent('Chin-ups', null, 5, acc('ch', 1, 'bench')),
+    ]),
+    rec(W1, 'Cycle 1', snap('Cycle 1'), [
+      ent('Squat', 225, 3, Object.assign({ unit: 'lb' }, main('squat', 4))),
+      ent('Squat', 120, 2, Object.assign({ deleted: true }, main('squat', 5))),
+      ent('Squat', 130, 0, Object.assign({ status: 'skipped' }, main('squat', 6))),
+      ent('chin-ups ', null, 4),
+      ent('Chin-ups', null, 8, acc('ch', 0, 'bench')),
+      ent('Squat', 80, 'AMRAP', main('squat', 7)),
+    ]),
+    rec(daysFrom(W2, 1), 'Cycle 2', snap('Cycle 2'), [
+      ent('Squat', 115, 3, main('squat', 4)),
+      ent('Squat', 100, 6, main('squat', 5)),
+      ent('Dips', 25, 5),
+      ent('Dips', null, 12),
+    ]),
+    rec(daysFrom(W2, 2), 'Cycle 2', null, [ent('Landmine press', 20, 10, acc('lm', 0, 'ohp'))]),
+  ]);
+}
+
 (async () => {
   // ---------------- step 1: dev detection ----------------
   {
@@ -1489,6 +1535,29 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     log('#v=progress opens the progress view', doc.body.dataset.view === 'progress');
     log('a Progress tab sits after Replay', Array.from(doc.querySelectorAll('#viewTabs [data-view]')).map(b => b.dataset.view).join('|') === 'plan|log|replay|progress');
     log('with nothing logged, progress says so', !!doc.getElementById('progressView') && /Nothing logged yet/.test(doc.getElementById('progressView').textContent));
+    done(dom);
+  }
+
+  // ---------------- progress: classes and chips ----------------
+  {
+    const idb = new IDBFactory();
+    await progressFixture(idb);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    const chips = () => Array.from(doc.querySelectorAll('#progressView .chip')).map(c => c.textContent.trim());
+    const click = sel => doc.querySelector(sel).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    log('e1RM chips: weighted lines only, main lifts first', chips().join('|') === 'Squat|Deadlift|Landmine press');
+    const sq = doc.querySelector('.chip[data-line="weighted|squat"]');
+    log('main lifts start selected', !!sq && sq.classList.contains('on'));
+    log('a session with no plan copy is classed by weight', chips().includes('Landmine press'));
+    if (doc.querySelector('[data-pmode="heavy"]')) {
+      click('[data-pmode="heavy"]');
+      log('heaviest-for-N adds belt lines, ad hoc weighted dips join the belt line', chips().join('|') === 'Squat|Deadlift|Dips (Belt)|Landmine press');
+      click('[data-pmode="reps"]');
+      log('reps chips: bodyweight and assisted, names merged ignoring case and spacing', chips().join('|') === 'Chin-ups|Dips (BW)|Pull-ups (Asst 15-35 kg band)');
+    } else log('mode buttons exist', false);
+    log('no NaN anywhere in the view', !/NaN/.test(doc.getElementById('progressView').innerHTML));
     done(dom);
   }
 
