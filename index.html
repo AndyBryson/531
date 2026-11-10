@@ -202,14 +202,15 @@
   .drive-btns{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;}
   .drive-err{color:var(--warn);}
   @media screen{
-    body[data-view="log"] .shell, body[data-view="replay"] .shell,
-    body[data-view="log"] .menu-toggle, body[data-view="replay"] .menu-toggle{display:none !important;}
-    body:not([data-view="log"]) #logView, body:not([data-view="replay"]) #replayView{display:none;}
+    body[data-view="log"] .shell, body[data-view="replay"] .shell, body[data-view="progress"] .shell,
+    body[data-view="log"] .menu-toggle, body[data-view="replay"] .menu-toggle, body[data-view="progress"] .menu-toggle{display:none !important;}
+    body:not([data-view="log"]) #logView, body:not([data-view="replay"]) #replayView, body:not([data-view="progress"]) #progressView{display:none;}
   }
 
   /* logging view: built for one thumb at phone width */
   .log-view, .replay-view{max-width:680px; margin:0 auto; padding-block:16px 80px;}
   .replay-view{max-width:1440px;}
+  .progress-view{max-width:1100px; margin:0 auto; padding-block:16px 80px;}
   .log-head{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
   .log-head input, .log-head select{font-size:15px; padding:9px 10px; flex:1 1 130px;}
   .log-head .log-plan-sel{flex-basis:100%;}
@@ -290,7 +291,7 @@
      multiple of --ps, which that function sets so each week fills one page. -->
 <style id="printStyles" media="print">
   :root{--ps:1;}
-  .dev-banner, .topbar, #logView, #replayView, .plan-bar, .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
+  .dev-banner, .topbar, #logView, #replayView, #progressView, .plan-bar, .controls, .menu-toggle, .program-actions, .add-ex, .exrow .rm, .weektab, .accessory-editor, footer.foot{display:none !important;}
   body{background:#fff; color:#000; font-size:calc(var(--ps) * 10px);}
   .app{max-width:none; padding:0;}
   .shell{display:block; padding:0;}
@@ -351,6 +352,7 @@
       <button data-view="plan">Plan</button>
       <button data-view="log">Log</button>
       <button data-view="replay">Replay</button>
+      <button data-view="progress">Progress</button>
     </div>
     <button class="sync-pill" id="syncPill" disabled>Local only</button>
   </nav>
@@ -518,6 +520,7 @@
   </section>
 
   <section class="replay-view" id="replayView"></section>
+  <section class="progress-view" id="progressView"></section>
 </div>
 
 <script>
@@ -657,7 +660,7 @@
     });
     return out;
   }
-  var VIEWS = ["plan","log","replay"];
+  var VIEWS = ["plan","log","replay","progress"];
   var currentView = VIEWS.indexOf(hashParams().v)>=0 ? hashParams().v : "plan";
 
   var state = loadState();
@@ -1209,6 +1212,7 @@
     renderOutput(program);
     if(currentView==="log") renderLog();
     if(currentView==="replay") renderReplay();
+    if(currentView==="progress") renderProgress();
     saveState();
   }
 
@@ -2150,6 +2154,7 @@
     document.querySelectorAll("#viewTabs [data-view]").forEach(function(b){ b.classList.toggle("active", b.dataset.view===currentView); });
     if(currentView==="log") renderLog();
     if(currentView==="replay") renderReplay();
+    if(currentView==="progress") renderProgress();
     updateWakeLock();
     saveState();
   }
@@ -2517,6 +2522,16 @@
     if(e.target.id==="replayWeekSel"){ replayWeekNum = parseInt(e.target.value, 10); renderReplay(); }
   });
 
+  // ---------------- progress ----------------
+  // A read-only look back over every logged session: lines over time per
+  // exercise, so Andy can see whether he is getting stronger.
+  function renderProgress(){
+    var el = document.getElementById("progressView");
+    if(!storeReady){ el.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
+    if(!Object.keys(sessions).length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Log a session and it will show here.</p>'; return; }
+    el.innerHTML = "";
+  }
+
   // ---------------- Google Drive sync ----------------
   // The programme and every session are mirrored to a "531 Planner" folder in
   // Andy's Drive, so the phone and laptop share them. All calls go straight
@@ -2832,6 +2847,7 @@
     // leave the log alone while something in it has focus; it redraws on the next action
     if(currentView==="log" && date===logDate && !logBody.contains(document.activeElement)) renderLog();
     if(currentView==="replay") renderReplay();
+    if(currentView==="progress") renderProgress();
   }
 
   // ---- linking ----

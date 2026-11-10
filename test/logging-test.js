@@ -1480,6 +1480,18 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(R);
   }
 
+  // ---------------- progress: tab ----------------
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    const { doc } = dom;
+    log('#v=progress opens the progress view', doc.body.dataset.view === 'progress');
+    log('a Progress tab sits after Replay', Array.from(doc.querySelectorAll('#viewTabs [data-view]')).map(b => b.dataset.view).join('|') === 'plan|log|replay|progress');
+    log('with nothing logged, progress says so', !!doc.getElementById('progressView') && /Nothing logged yet/.test(doc.getElementById('progressView').textContent));
+    done(dom);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();
