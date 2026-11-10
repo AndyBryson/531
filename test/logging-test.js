@@ -1432,7 +1432,8 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
         { id: 'lm1', name: 'Landmine Press', kit: 'landmine', weight: 20, sets: 2, reps: '10' },
         { id: 'bd1', name: 'Band Pull-apart', kit: 'band', band: '15-35 kg', sets: 2, reps: '15' },
         { id: 'bd2', name: 'Face Pull', kit: 'band', band: '', sets: 1, reps: '15' },
-        { id: 'as1', name: 'Assisted Pull-up', kit: 'assisted', band: '15-35 kg', sets: 1, reps: '8' }] } };
+        { id: 'as1', name: 'Assisted Pull-up', kit: 'assisted', band: '15-35 kg', sets: 1, reps: '8' },
+        { id: 'tg1', name: 'Odd Band', kit: 'band', band: '<i>Red</i>', sets: 1, reps: '10' }] } };
     const L = load({ url: 'https://andybryson.github.io/531/' + linkFor(snap) + '&v=log', idb });
     await wait(200);
     await startLog(L);
@@ -1454,12 +1455,28 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
       const asEntry = rec && rec.entries.find(e => e.planned.key === 'acc:as1:0');
       log('ticked band set records the band text', !!entry && entry.band === '15-35 kg' && entry.weight === null);
       log('ticked assisted set records the assisted band text', !!asEntry && asEntry.band === '15-35 kg band, assisted' && asEntry.weight === null);
+      const odd = rowBy(L.doc, 'acc:tg1:0');
+      log('band text is shown as typed, not read as markup, in the log', !!odd && /<i>Red<\/i>/.test(odd.querySelector('.set-load').textContent) && !odd.querySelector('.set-load i'));
+      // "+ set" on the band block copies the band, not BW
+      L.doc.querySelector('#logBody [data-act="addset"][data-section="acc:bd1"]').click();
+      await wait(400);
+      const rec2 = await idbGet(idb, '531-planner', 'sessions', TODAY);
+      const extra = rec2 && rec2.entries.find(e => e.planned && e.planned.key === 'acc:bd1:extra');
+      log('+ set on a band block records the band text', !!extra && extra.band === '15-35 kg' && extra.weight === null);
+      const addedRow = extra && L.doc.querySelector('#logBody [data-entry="' + extra.id + '"]');
+      log('the added band set hints the band, not BW', !!addedRow && addedRow.querySelector('[data-act="eweight"]').placeholder === '15-35 kg');
     }
     done(L);
     const R = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
     await wait(250);
     const replayRow = Array.from(R.doc.querySelectorAll('#replayView .replay-row')).find(r => /15 × 15-35 kg/.test(r.textContent) && r.classList.contains('done'));
     log('replay shows the band text instead of BW', !!replayRow && !/BW/.test(replayRow.textContent));
+    const replayAdded = Array.from(R.doc.querySelectorAll('#replayView .replay-row')).find(r => /added set/.test(r.textContent));
+    log('replay shows an added band set with its band', !!replayAdded && /15-35 kg/.test(replayAdded.textContent) && !/BW/.test(replayAdded.textContent));
+    const lmLabel = Array.from(R.doc.querySelectorAll('#replayView .section-label')).find(l => l.textContent.indexOf('Landmine Press') === 0);
+    log('replay accessory labels carry the kit label', !!lmLabel && !!lmLabel.querySelector('.kit-tag') && lmLabel.querySelector('.kit-tag').textContent === 'LM');
+    const oddReplay = Array.from(R.doc.querySelectorAll('#replayView .replay-row')).find(r => /Red/.test(r.textContent));
+    log('band text is shown as typed, not read as markup, in replay', !!oddReplay && !oddReplay.querySelector('.set-load i'));
     done(R);
   }
 

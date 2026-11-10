@@ -1830,6 +1830,13 @@
     if(s.accessory && KIT_META[s.kit] && KIT_META[s.kit].input==="text") return s.band || "Band";
     return slot.planned.weight==null ? "BW" : "";
   }
+  // an added set copies its block's band; show the printed range (assisted
+  // entries store "15-35 kg band, assisted", so hint just the range)
+  function addedWeightPlaceholder(e){
+    if(!e.band) return "BW";
+    var m = /^(.*) band, assisted$/.exec(e.band);
+    return m ? m[1] : e.band.replace(/, assisted$/, "");
+  }
   function slotMeta(s){
     var pct = s.pct ? Math.round(s.pct*100)+"%" : "";
     var label = s.warmup ? "Warm-up" : s.isAssistance ? s.label : s.accessory ? "" : "Work";
@@ -1936,7 +1943,7 @@
         + '</div>';
     }
     return '<div class="'+cls+'" data-slot="'+escapeAttr(slot.key)+'">'
-      + '<div class="log-plan"><span class="set-load">'+setLoadText(s)+'</span>'
+      + '<div class="log-plan"><span class="set-load">'+escapeAttr(setLoadText(s))+'</span>'
       + '<span class="set-meta">'+slotMeta(s)+'</span>'
       + (s.accessory && !KIT_META[s.kit].plates ? "" : '<div class="set-badges">'+plateBadgesHTML(s)+'</div>')
       + (statusText ? '<span class="log-status">'+escapeAttr(statusText)+'</span>' : "")
@@ -1961,7 +1968,7 @@
       + (e.note ? '<span class="log-status">'+escapeAttr(e.note)+'</span>' : "")
       + '</div>'
       + '<div class="log-ctrls">'
-      + '<input type="number" class="log-wt" data-act="eweight" inputmode="decimal" step="0.5" aria-label="Weight" placeholder="BW" value="'+(e.weight==null?"":e.weight)+'">'
+      + '<input type="number" class="log-wt" data-act="eweight" inputmode="decimal" step="0.5" aria-label="Weight" placeholder="'+escapeAttr(addedWeightPlaceholder(e))+'" value="'+(e.weight==null?"":e.weight)+'">'
       + '<input type="number" class="log-reps" data-act="ereps" inputmode="numeric" min="0" aria-label="Reps" value="'+(e.reps==null?"":e.reps)+'">'
       + '<button class="log-btn" data-act="enotes" aria-label="Comment">⋯</button>'
       + '<button class="log-btn" data-act="remove" aria-label="Remove">×</button>'
@@ -2272,7 +2279,7 @@
       if(!sec) return;
       live.forEach(function(e){ if(e.planned && e.status!=="skipped" && (e.planned.key===sectionKey+":extra" || e.planned.key.indexOf(sectionKey+":")===0)) last = e; });
       var lastSlot = sec.slots[sec.slots.length-1];
-      if(!last) last = {weight:lastSlot.planned.weight, reps:parseNum(lastSlot.planned.reps), unit:state.unit, note:""};
+      if(!last) last = {weight:lastSlot.planned.weight, band:lastSlot.planned.band, reps:parseNum(lastSlot.planned.reps), unit:state.unit, note:""};
       entry = {exercise:sec.exercise, planned:{key:sectionKey+":extra", lift:sec.lift, kind:"extra", set:null, reps:null, amrap:false, weight:null}};
     }
     entry.id = newId(); entry.t = nowISO();
@@ -2281,6 +2288,7 @@
     entry.unit = last.unit || state.unit;
     entry.reps = last.reps==null ? 0 : last.reps;
     entry.status = "reps"; entry.note = "";
+    if(last.band) entry.band = last.band;
     rec.entries.push(entry);
     touchSession(rec);
     renderLog();
@@ -2416,7 +2424,7 @@
     var meta = slotMeta(slot.s);
     var result = rec ? (e ? resultText(e) : "missed") : "";
     return '<div class="'+cls+'">'
-      + '<div class="set-main"><span class="set-load">'+setLoadText(slot.s)+'</span>'+(meta ? '<span class="set-meta">'+meta+'</span>' : "")
+      + '<div class="set-main"><span class="set-load">'+escapeAttr(setLoadText(slot.s))+'</span>'+(meta ? '<span class="set-meta">'+meta+'</span>' : "")
       + (e && e.note ? '<span class="replay-note">'+escapeAttr(e.note)+'</span>' : "")
       + '</div>'
       + '<div class="replay-result">'+escapeAttr(result)+'</div>'
@@ -2433,7 +2441,7 @@
     var sorted = sortEntries(liveEntries(rec), sections);
     var body = sections.map(function(sec, i){
       // like the planner, the main lift's list has no label: the card heading names it
-      return '<div>'+(i ? '<div class="section-label">'+escapeAttr(sec.title)+'</div>' : "")+'<div class="set-list">'
+      return '<div>'+(i ? '<div class="section-label">'+escapeAttr(sec.title)+(sec.kit ? kitLabelHTML(sec.kit) : "")+'</div>' : "")+'<div class="set-list">'
         + sec.slots.map(function(slot){ return replayRowHTML(slot, rec); }).join("")
         + (sorted.extras[sec.key] || []).map(function(e){
           return '<div class="set-row replay-row done"><div class="set-main"><span class="set-load">added set</span>'+(e.note ? '<span class="replay-note">'+escapeAttr(e.note)+'</span>' : "")+'</div><div class="replay-result">'+escapeAttr(resultText(e))+'</div></div>';

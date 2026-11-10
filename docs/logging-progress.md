@@ -115,6 +115,10 @@ Tracks the build of `docs/logging-plan.md`. Work happens on the `dev` branch; `m
 - Tests: fixtures shaped like the 28 Oct session (week 4 day 1, bench/dips/chin-up/landmine/calf-raise extras with unknown ids, a deleted set, a day-2 set) and the 20 Oct session (week 2 day 3, pull-ups in the snapshot only). The older "another day" tests now check the "Also on this date" section.
 - Manual check on real data: (1) Log, 28 Oct: one row per live entry, each named, none nameless under Overhead Press. (2) Log, 20 Oct: "As logged" selected, pull-ups shown with their ticks. (3) Start a session on 20 Oct, add a set, sync: `sessions/2026-10-20.json` updates and the other device shows it. (4) Replay, week 4: the 28 Oct extras listed by name.
 
+### Accessory kit (10 Nov, Andy: a 20 kg landmine press showed as "bar only")
+- Each accessory has `kit` (bodyweight, barbell, landmine, belt, kettlebell, dumbbell, band, assisted) and `band` text. Old plans map `weighted` to barbell or bodyweight in `mergeState()`; `weighted` is still written for older copies of the app. Design: `docs/superpowers/specs/2026-11-10-accessory-kit-design.md`.
+- Landmine and dip belt plates are solved per exercise as one stack with no bar weight, apart from the barbell plate-move sequence. A logged band or assisted set stores the band text in `entry.band`, which Replay shows instead of "BW".
+
 ## Next
 - Real-device checks (sign-in popup in the installed app, sync between phone and laptop), and merging `dev` into `main` when happy.
 
