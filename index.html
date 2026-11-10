@@ -1820,8 +1820,15 @@
   // key is stable for a given programme day, and is how a logged entry finds its
   // planned set again (in the logging view and in replay).
   function setLoadText(s){
-    if(s.accessory) return s.weighted ? (s.reps+' × '+fmtWeight(s.weight)+' '+unitLabel()) : (s.reps+' reps');
+    if(s.accessory) return accessoryLoadText(s);
     return String(s.reps)+(s.amrap?'+':'')+' × '+fmtWeight(s.weight)+' '+unitLabel();
+  }
+  // the hint in an empty weight box: the band's printed range for Band and
+  // Assisted (kept short to fit), BW for bodyweight
+  function weightPlaceholder(slot){
+    var s = slot.s;
+    if(s.accessory && KIT_META[s.kit] && KIT_META[s.kit].input==="text") return s.band || "Band";
+    return slot.planned.weight==null ? "BW" : "";
   }
   function slotMeta(s){
     var pct = s.pct ? Math.round(s.pct*100)+"%" : "";
@@ -1850,12 +1857,14 @@
     day.accessories.forEach(function(ex){
       var slots = [];
       for(var i=0;i<(ex.sets||1);i++){
-        var s = {accessory:true, weighted:ex.weighted, weight:ex.weight, reps:ex.reps, plateCombo:ex.plateCombo, plateApprox:ex.plateApprox, belowBar:ex.belowBar};
+        var kit = kitOf(ex), input = KIT_META[kit].input;
+        var s = {accessory:true, kit:kit, band:ex.band||"", weighted:input==="number", weight:ex.weight, reps:ex.reps, plateCombo:ex.plateCombo, plateApprox:ex.plateApprox, belowBar:ex.belowBar};
         var key = "acc:"+ex.id+":"+i;
-        slots.push({key:key, s:s, exercise:ex.name||"Exercise",
-          planned:{key:key, lift:day.lift, kind:"accessory", set:i+1, reps:ex.reps, amrap:false, weight:ex.weighted ? ex.weight : null}});
+        var planned = {key:key, lift:day.lift, kind:"accessory", set:i+1, reps:ex.reps, amrap:false, weight:input==="number" ? ex.weight : null};
+        if(input==="text") planned.band = bandText(ex);
+        slots.push({key:key, s:s, exercise:ex.name||"Exercise", planned:planned});
       }
-      sections.push({key:"acc:"+ex.id, title:ex.name||"Exercise", lift:day.lift, exercise:ex.name||"Exercise", slots:slots});
+      sections.push({key:"acc:"+ex.id, title:ex.name||"Exercise", kit:kitOf(ex), lift:day.lift, exercise:ex.name||"Exercise", slots:slots});
     });
     return sections;
   }
@@ -1929,11 +1938,11 @@
     return '<div class="'+cls+'" data-slot="'+escapeAttr(slot.key)+'">'
       + '<div class="log-plan"><span class="set-load">'+setLoadText(s)+'</span>'
       + '<span class="set-meta">'+slotMeta(s)+'</span>'
-      + (s.accessory && !s.weighted ? "" : '<div class="set-badges">'+plateBadgesHTML(s)+'</div>')
+      + (s.accessory && !KIT_META[s.kit].plates ? "" : '<div class="set-badges">'+plateBadgesHTML(s)+'</div>')
       + (statusText ? '<span class="log-status">'+escapeAttr(statusText)+'</span>' : "")
       + '</div>'
       + '<div class="log-ctrls">'
-      + '<input type="number" class="log-wt" data-act="weight" inputmode="decimal" step="0.5" aria-label="Weight" placeholder="'+(slot.planned.weight==null?"BW":"")+'" value="'+(weight==null?"":weight)+'">'
+      + '<input type="number" class="log-wt" data-act="weight" inputmode="decimal" step="0.5" aria-label="Weight" placeholder="'+escapeAttr(weightPlaceholder(slot))+'" value="'+(weight==null?"":weight)+'">'
       + '<input type="number" class="log-reps" data-act="reps" inputmode="numeric" min="0" aria-label="Reps done" placeholder="'+escapeAttr(String(s.reps))+(s.amrap?"+":"")+'" value="'+repsVal+'">'
       + tick
       + '<button class="log-btn" data-act="more" aria-label="More">⋯</button>'
@@ -2045,7 +2054,7 @@
     } else {
       sections.forEach(function(sec){
         currentLogSections[sec.key] = sec;
-        html += '<div class="log-section"><h3>'+escapeAttr(sec.title)+'</h3><div class="log-rows">'
+        html += '<div class="log-section"><h3>'+escapeAttr(sec.title)+(sec.kit ? kitLabelHTML(sec.kit) : "")+'</h3><div class="log-rows">'
           + sec.slots.map(function(slot){ currentLogSlots[slot.key] = slot; return logRowHTML(slot, rec); }).join("")
           + (sorted.extras[sec.key] || []).map(function(e){ return addedRowHTML(e); }).join("")
           + addSetHTML(sec.key)
@@ -2108,6 +2117,7 @@
     var e = entryForSlot(logRec(), slot.key);
     if(!e){
       e = stampDay({id:newId(), t:null, exercise:slot.exercise, weight:slot.planned.weight, unit:state.unit, reps:null, status:null, planned:clone(slot.planned), note:""});
+      if(slot.planned.band) e.band = slot.planned.band;
       var draft = draftWeights[draftKey(slot)];
       if(draft!==undefined) e.weight = draft;
       var draftNote = draftNotes[draftKey(slot)];
@@ -2390,7 +2400,7 @@
   function resultText(e){
     if(!e) return "";
     if(e.status==="skipped") return "skipped";
-    var w = e.weight!=null ? fmtWeight(e.weight)+" "+e.unit : "BW";
+    var w = e.weight!=null ? fmtWeight(e.weight)+" "+e.unit : (e.band || (e.planned && e.planned.band) || "BW");
     if(e.status==="ticked") return "✓ "+e.reps+" × "+w;
     return e.reps+" × "+w;
   }

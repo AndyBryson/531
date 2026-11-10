@@ -1423,6 +1423,46 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(K);
   }
 
+  // ---------------- accessory kit in the log and replay ----------------
+  {
+    const idb = new IDBFactory();
+    const linkFor = st => '#s=' + Buffer.from(JSON.stringify(st)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const snap = { programTitle: TODAY + ' - Kit', template: 'bbb', unit: 'kg',
+      accessories: { bench: [], deadlift: [], squat: [], ohp: [
+        { id: 'lm1', name: 'Landmine Press', kit: 'landmine', weight: 20, sets: 2, reps: '10' },
+        { id: 'bd1', name: 'Band Pull-apart', kit: 'band', band: '15-35 kg', sets: 2, reps: '15' },
+        { id: 'bd2', name: 'Face Pull', kit: 'band', band: '', sets: 1, reps: '15' },
+        { id: 'as1', name: 'Assisted Pull-up', kit: 'assisted', band: '15-35 kg', sets: 1, reps: '8' }] } };
+    const L = load({ url: 'https://andybryson.github.io/531/' + linkFor(snap) + '&v=log', idb });
+    await wait(200);
+    await startLog(L);
+    const lmRow = rowBy(L.doc, 'acc:lm1:0'), bdRow = rowBy(L.doc, 'acc:bd1:0'), fpRow = rowBy(L.doc, 'acc:bd2:0'), asRow = rowBy(L.doc, 'acc:as1:0');
+    log('log has a row for each kit accessory', !!(lmRow && bdRow && fpRow && asRow));
+    if (lmRow && bdRow && fpRow && asRow) {
+      log('landmine slot plans 20 kg with no bar only note', lmRow.querySelector('[data-act="weight"]').value === '20' && !/bar only/.test(lmRow.textContent));
+      log('band slot weight box is empty with the band text as placeholder', bdRow.querySelector('[data-act="weight"]').value === '' && bdRow.querySelector('[data-act="weight"]').placeholder === '15-35 kg');
+      log('empty band text falls back to Band', fpRow.querySelector('[data-act="weight"]').placeholder === 'Band' && /Band/.test(fpRow.textContent));
+      log('assisted slot weight placeholder is the short band text', asRow.querySelector('[data-act="weight"]').placeholder === '15-35 kg');
+      const lmHeading = Array.from(L.doc.querySelectorAll('#logBody .log-section h3')).find(h => h.textContent.indexOf('Landmine Press') === 0);
+      log('log section heading shows the kit label', !!lmHeading && /LM/.test(lmHeading.textContent));
+      bdRow.querySelector('[data-act="tick"]').click();
+      await wait(50);
+      rowBy(L.doc, 'acc:as1:0').querySelector('[data-act="tick"]').click();
+      await wait(400);
+      const rec = await idbGet(idb, '531-planner', 'sessions', TODAY);
+      const entry = rec && rec.entries.find(e => e.planned.key === 'acc:bd1:0');
+      const asEntry = rec && rec.entries.find(e => e.planned.key === 'acc:as1:0');
+      log('ticked band set records the band text', !!entry && entry.band === '15-35 kg' && entry.weight === null);
+      log('ticked assisted set records the assisted band text', !!asEntry && asEntry.band === '15-35 kg band, assisted' && asEntry.weight === null);
+    }
+    done(L);
+    const R = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    await wait(250);
+    const replayRow = Array.from(R.doc.querySelectorAll('#replayView .replay-row')).find(r => /15 × 15-35 kg/.test(r.textContent) && r.classList.contains('done'));
+    log('replay shows the band text instead of BW', !!replayRow && !/BW/.test(replayRow.textContent));
+    done(R);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();
