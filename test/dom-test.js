@@ -122,6 +122,8 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   const approxBadge = frontSquatList ? frontSquatList.querySelector('.badge.approx') : null;
   log('inexact loading is flagged as approximate rather than silently wrong', !!approxBadge && /closest available/.test(approxBadge.getAttribute('title') || ''));
 
+  const frontSquatBadgesBefore = JSON.stringify(Array.from(frontSquatList ? frontSquatList.querySelectorAll('.badge:not(.kit-tag)') : []).map(b => parseFloat(b.textContent)));
+
   // --- kit choice: each kit shows the right input in the editor ---
   async function addSquatAccessory(name, kit) {
     doc.querySelector('[data-add-lift="squat"]').click();
@@ -157,6 +159,48 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   log('landmine kit shows a weight box', !!lmWt);
   if (lmWt) { lmWt.value = '20'; lmWt.dispatchEvent(new dom.window.Event('input', { bubbles: true })); await wait(20); }
 
+  async function setRowValue(row, field, value) {
+    const el = row.querySelector('[data-field="' + field + '"]');
+    el.value = value;
+    el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await wait(20);
+  }
+  const asstRow = Array.from(squatAccessoryBlock().querySelectorAll('.exrow')).find(r => r.querySelector('[data-field="name"]').value === 'Assisted Pull-up');
+  await setRowValue(asstRow, 'band', '15-35 kg');
+  await setRowValue(asstRow, 'reps', '8');
+  await setRowValue(await addSquatAccessory('Landmine Light', 'landmine'), 'weight', '5');
+  await setRowValue(await addSquatAccessory('Landmine Heavy', 'landmine'), 'weight', '300');
+  await setRowValue(await addSquatAccessory('Weighted Dip', 'belt'), 'weight', '25');
+  await setRowValue(await addSquatAccessory('Goblet Squat', 'kettlebell'), 'weight', '24');
+  await setRowValue(await addSquatAccessory('DB Row', 'dumbbell'), 'weight', '22.5');
+
+  // --- how each kit shows on the squat day card ---
+  const kitCard = Array.from(doc.querySelectorAll('.day-card')).find(c => c.querySelector('h3').textContent === 'Squat');
+  function kitList(name) {
+    const label = Array.from(kitCard.querySelectorAll('.section-label')).find(el => el.textContent.indexOf(name) === 0);
+    return label ? label.nextElementSibling : null;
+  }
+  function firstRow(name) { const l = kitList(name); return l ? l.querySelector('.set-row') : null; }
+  function rowText(name) { const r = firstRow(name); return r ? r.textContent : ''; }
+  function badgeTexts(el) { return el ? Array.from(el.querySelectorAll('.badge:not(.kit-tag)')).map(b => parseFloat(b.textContent)) : []; }
+  log('landmine 20 kg shows 20 and a 20 plate, not "bar only"', /20 kg/.test(rowText('Landmine Press')) && !/bar only/.test(rowText('Landmine Press')) && badgeTexts(firstRow('Landmine Press')).join(',') === '20');
+  log('landmine 5 kg stays 5 and loads a 5 plate', /5 kg/.test(rowText('Landmine Light')) && !/20 kg/.test(rowText('Landmine Light')) && badgeTexts(firstRow('Landmine Light')).join(',') === '5');
+  log('landmine beyond plate stock is flagged closest available', !!(kitList('Landmine Heavy') && kitList('Landmine Heavy').querySelector('.badge.approx')));
+  log('dip belt 25 kg loads 25 kg of plates on one chain', badgeTexts(firstRow('Weighted Dip')).reduce((a, b) => a + b, 0) === 25 && !/bar only/.test(rowText('Weighted Dip')));
+  log('kettlebell shows the weight as typed with no plate badges', /24 kg/.test(rowText('Goblet Squat')) && firstRow('Goblet Squat') && firstRow('Goblet Squat').querySelectorAll('.badge').length === 0);
+  log('dumbbell load says per hand', /22\.5 kg per hand/.test(rowText('DB Row')));
+  log('band shows its printed range', /15-35 kg/.test(rowText('Band Pull-apart')));
+  log('assisted reads as a helping band', /8 × 15-35 kg band, assisted/.test(rowText('Assisted Pull-up')));
+  const kitTags = Array.from(kitCard.querySelectorAll('.kit-tag')).map(t => t.textContent);
+  log('kit labels appear next to the exercise names', ['LM', 'Belt', 'KB', 'DB', 'Band', 'Asst'].every(t => kitTags.includes(t)));
+  log('barbell Front Squat plate badges unchanged by the other kit', JSON.stringify(badgeTexts(kitList('Front Squat'))) === frontSquatBadgesBefore);
+
+  let copiedText = null;
+  dom.window.navigator.clipboard.writeText = t => { copiedText = t; return Promise.resolve(); };
+  doc.getElementById('copyBtn').click();
+  await wait(20);
+  log('text export names the kit and band', !!copiedText && /Landmine Press @ 20kg \(LM\)/.test(copiedText) && /Band Pull-apart \(15-35 kg\)/.test(copiedText) && /Assisted Pull-up \(15-35 kg band, assisted\)/.test(copiedText) && /DB Row @ 22\.5kg \(DB\) per hand/.test(copiedText));
+
   // unit switch converts kit weights but leaves band text as typed
   doc.querySelector('[data-unit="lbs"]').click();
   await wait(20);
@@ -167,7 +211,7 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   doc.querySelector('[data-unit="kg"]').click();
   await wait(20);
   // remove the kit test rows so later checks see the squat accessories they expect
-  for (const name of ['Band Pull-apart', 'Assisted Pull-up', 'Plank', 'Landmine Press']) {
+  for (const name of ['Band Pull-apart', 'Assisted Pull-up', 'Plank', 'Landmine Press', 'Landmine Light', 'Landmine Heavy', 'Weighted Dip', 'Goblet Squat', 'DB Row']) {
     const row = Array.from(squatAccessoryBlock().querySelectorAll('.exrow')).find(r => r.querySelector('[data-field="name"]').value === name);
     if (row) { row.querySelector('[data-field="remove"]').click(); await wait(20); }
   }

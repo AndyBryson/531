@@ -179,6 +179,7 @@
   .badge{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:11px; color:var(--text-dim); background:var(--surface); border:1px solid var(--border); border-radius:5px; padding:1px 6px; line-height:1.6; white-space:nowrap;}
   .badge.approx{border-style:dashed;}
   .badge.note{font-family:var(--sans); font-style:italic;}
+  .badge.kit-tag{font-family:var(--sans); font-size:10px; letter-spacing:0; text-transform:none; margin-left:4px; vertical-align:1px;}
 
   .empty-note{font-size:12.5px; color:var(--text-dim); font-style:italic;}
 
@@ -337,6 +338,7 @@
   .badge.approx::after{content:")~";}
   .badge.note::before, .badge.note::after{content:"";}
   .badge.note{font-style:italic;}
+  .badge.kit-tag{margin-left:2px; text-transform:none;}
   .empty-note{font-size:calc(var(--ps) * 11px); padding:calc(var(--ps) * 4px) calc(var(--ps) * 7px); color:#000;}
   .hint{color:#555;}
 
@@ -1028,9 +1030,10 @@
     }
     var accessories = (state.accessories[lift]||[]).map(function(ex){
       // accessory weights are whatever the user typed, not rounded to the barbell increment
+      var kit = kitOf(ex), numeric = KIT_META[kit].input==="number";
       return {
-        id:ex.id, name:ex.name, sets:ex.sets, reps:ex.reps,
-        weighted:ex.weighted, weight:ex.weighted ? ex.weight : 0
+        id:ex.id, name:ex.name, sets:ex.sets, reps:ex.reps, kit:kit, band:ex.band||"",
+        weighted:numeric, weight:numeric ? ex.weight : 0
       };
     });
 
@@ -1040,7 +1043,7 @@
     workSets.forEach(function(s){ loadable.push(s); });
     assistance.forEach(function(s){ loadable.push(s); });
     lightBlock.forEach(function(s){ loadable.push(s); });
-    accessories.filter(function(a){return a.weighted;}).forEach(function(a){ loadable.push(a); });
+    accessories.filter(function(a){return KIT_META[a.kit].plates==="bar";}).forEach(function(a){ loadable.push(a); });
 
     // a target below the bar's own weight can't actually be loaded lighter than an
     // empty bar, so the displayed weight floors to the bar — not just the plate
@@ -1062,6 +1065,13 @@
       });
       var combos = computeSessionPlates(targets, state.plates);
       refs.forEach(function(ref, i){ ref.plateCombo = combos[i].combo; ref.plateApprox = !combos[i].exact; });
+      // landmine and dip belt: the whole weight goes on one sleeve or chain,
+      // with no bar to subtract, solved on its own (a different implement)
+      accessories.forEach(function(a){
+        if(KIT_META[a.kit].plates!=="single" || !(a.weight > EPS)) return;
+        var c = computeSessionPlates([a.weight], state.plates)[0];
+        a.perSide = a.weight; a.plateCombo = c.combo; a.plateApprox = !c.exact;
+      });
     }
 
     return {
@@ -1129,20 +1139,37 @@
     return out;
   }
 
+  // the band as it should read: Band shows the printed range, Assisted says the band is helping
+  function bandText(ex){
+    var kit = kitOf(ex);
+    if(kit==="band") return ex.band || "Band";
+    if(kit==="assisted") return (ex.band ? ex.band+" band" : "Band") + ", assisted";
+    return "";
+  }
+  function accessoryLoadText(ex){
+    var kit = kitOf(ex), input = KIT_META[kit].input;
+    if(input==="none") return ex.reps+' reps';
+    if(input==="text") return ex.reps+' × '+bandText(ex);
+    return ex.reps+' × '+fmtWeight(ex.weight)+' '+unitLabel()+(kit==="dumbbell" ? ' per hand' : '');
+  }
+  function kitLabelHTML(kit){
+    var short = KIT_META[kit] ? KIT_META[kit].short : "";
+    return short ? ' <span class="badge kit-tag">'+short+'</span>' : "";
+  }
   function accessoryRowsHTML(ex){
     var n = ex.sets || 1;
+    var plates = !!KIT_META[ex.kit].plates;
     var rows = "";
     for(var i=0;i<n;i++){
-      var loadText = ex.weighted ? (ex.reps+' × '+fmtWeight(ex.weight)+' '+unitLabel()) : (ex.reps+' reps');
-      rows += '<div class="set-row'+(ex.weighted?"":" bw")+'">'
-        + '<div class="set-main"><span class="set-load">'+loadText+'</span></div>'
-        + '<div class="set-badges">'+(ex.weighted ? plateBadgesHTML(ex) : "")+'</div>'
+      rows += '<div class="set-row'+(ex.kit==="bodyweight"?" bw":"")+'">'
+        + '<div class="set-main"><span class="set-load">'+escapeAttr(accessoryLoadText(ex))+'</span></div>'
+        + '<div class="set-badges">'+(plates ? plateBadgesHTML(ex) : "")+'</div>'
         + '</div>';
     }
     return rows;
   }
   function accessoryBlockHTML(ex){
-    return '<div><div class="section-label">'+escapeAttr(ex.name||"Exercise")+'</div>'
+    return '<div><div class="section-label">'+escapeAttr(ex.name||"Exercise")+kitLabelHTML(ex.kit)+'</div>'
       + '<div class="set-list">'+accessoryRowsHTML(ex)+'</div></div>';
   }
 
@@ -2896,7 +2923,11 @@
           lines.push("  " + (sets>1?sets+"x":"") + reps + " @ " + fmtWeight(s.weight) + unitLabel() + (s.pct?" ("+Math.round(s.pct*100)+"%)":""));
         });
         day.accessories.forEach(function(ex){
-          lines.push("  " + ex.sets + "x" + ex.reps + " " + ex.name + (ex.weighted?" @ "+fmtWeight(ex.weight)+unitLabel():" (bodyweight)"));
+          var meta = KIT_META[ex.kit], tail;
+          if(meta.input==="none") tail = " (bodyweight)";
+          else if(meta.input==="text") tail = " (" + bandText(ex) + ")";
+          else tail = " @ " + fmtWeight(ex.weight) + unitLabel() + (meta.short ? " ("+meta.short+")" : "") + (ex.kit==="dumbbell" ? " per hand" : "");
+          lines.push("  " + ex.sets + "x" + ex.reps + " " + ex.name + tail);
         });
         if(day.lightLift){
           if(day.lightBlock.length){
