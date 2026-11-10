@@ -144,7 +144,8 @@
   .exrow input[type=text]{flex:1 1 110px; min-width:90px;}
   .exrow input[type=number]{width:52px;}
   .exrow .wt-input{width:76px;}
-  .exrow label.bw{display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text-dim); white-space:nowrap;}
+  .exrow select[data-field=kit]{font-size:12px; max-width:110px;}
+  .exrow .band-input{flex:0 1 96px; min-width:80px;}
   .exrow .rm{background:none; border:none; color:var(--warn); font-size:15px; line-height:1; padding:2px 4px;}
   .add-ex{font-size:12px; background:none; border:1px dashed var(--rule); border-radius:6px; padding:6px 10px; color:var(--text-dim); width:100%;}
   .add-ex:hover{border-color:var(--accent); color:var(--accent);}
@@ -560,6 +561,34 @@
   var DEFAULT_PLATES_KG = {25:1, 20:2, 15:1, 10:1, 5:1, 2.5:1, 1.25:1, 0.5:0};
   var DEFAULT_PLATES_LBS = {45:2, 35:1, 25:2, 10:2, 5:2, 2.5:1};
 
+  // What an accessory exercise is done with. input: which box the editor shows
+  // ("number" = weight, "text" = what's printed on the band). plates: "bar" =
+  // loaded on the barbell with the main lift, "single" = plates on one landmine
+  // sleeve or dip-belt chain with no bar weight, null = no plate breakdown.
+  // (declared up here: the hash state is merged before later vars are assigned)
+  var KIT_META = {
+    bodyweight:{label:"Bodyweight", short:"", input:"none", plates:null},
+    barbell:{label:"Barbell", short:"", input:"number", plates:"bar"},
+    landmine:{label:"Landmine", short:"LM", input:"number", plates:"single"},
+    belt:{label:"Dip belt", short:"Belt", input:"number", plates:"single"},
+    kettlebell:{label:"Kettlebell", short:"KB", input:"number", plates:null},
+    dumbbell:{label:"Dumbbell", short:"DB", input:"number", plates:null},
+    band:{label:"Band", short:"Band", input:"text", plates:null},
+    assisted:{label:"Assisted", short:"Asst", input:"text", plates:null}
+  };
+  var KIT_ORDER = ["bodyweight","barbell","landmine","belt","kettlebell","dumbbell","band","assisted"];
+  // plans from before the kit choice only have the "weighted" tick
+  function kitOf(ex){
+    return KIT_META.hasOwnProperty(ex.kit) ? ex.kit : (ex.weighted ? "barbell" : "bodyweight");
+  }
+  function normaliseAccessory(ex){
+    ex.kit = kitOf(ex);
+    ex.band = String(ex.band||"");
+    // kept for older copies of the app, which only know barbell or bodyweight
+    ex.weighted = KIT_META[ex.kit].input==="number";
+    return ex;
+  }
+
   var EPS = 1e-6;
 
   // the dev build is served from /531/dev/ (and localhost while developing). It
@@ -609,10 +638,10 @@
       // Standard + partner FSL: optional sets of 5 of the day's own lift, straight after its main sets (0 = off)
       ownFslSets:{ohp:0, bench:0, squat:0, deadlift:0},
       accessories:{
-        ohp:[{id:"ex1", name:"Dip", sets:3, reps:"10-15", weighted:false, weight:0}],
-        bench:[{id:"ex2", name:"Bicep Curl", sets:3, reps:"10-15", weighted:false, weight:0}],
+        ohp:[{id:"ex1", name:"Dip", sets:3, reps:"10-15", weighted:false, weight:0, kit:"bodyweight", band:""}],
+        bench:[{id:"ex2", name:"Bicep Curl", sets:3, reps:"10-15", weighted:false, weight:0, kit:"bodyweight", band:""}],
         squat:[],
-        deadlift:[{id:"ex3", name:"Hanging Leg Raise", sets:3, reps:"12-15", weighted:false, weight:0}]
+        deadlift:[{id:"ex3", name:"Hanging Leg Raise", sets:3, reps:"12-15", weighted:false, weight:0, kit:"bodyweight", band:""}]
       }
     };
   }
@@ -653,6 +682,9 @@
         ownFslSets:Object.assign({}, d.ownFslSets, parsed.ownFslSets||{})
       });
       merged.programTitle = normalisePlanName(merged.programTitle);
+      Object.keys(merged.accessories).forEach(function(l){
+        merged.accessories[l] = (merged.accessories[l]||[]).map(normaliseAccessory);
+      });
       return merged;
     }catch(e){ return defaultState(); }
   }
@@ -879,8 +911,8 @@
     if(state.template!=="triumvirate") return;
     LIFTS.forEach(function(lift){
       if(state.accessories[lift].length===0){
-        state.accessories[lift].push({id:lift+"-a1", name:"Assistance 1", sets:5, reps:"10-15", weighted:false, weight:0});
-        state.accessories[lift].push({id:lift+"-a2", name:"Assistance 2", sets:5, reps:"10-15", weighted:false, weight:0});
+        state.accessories[lift].push({id:lift+"-a1", name:"Assistance 1", sets:5, reps:"10-15", weighted:false, weight:0, kit:"bodyweight", band:""});
+        state.accessories[lift].push({id:lift+"-a2", name:"Assistance 2", sets:5, reps:"10-15", weighted:false, weight:0, kit:"bodyweight", band:""});
       }
     });
   }
@@ -1259,13 +1291,15 @@
     var el = document.getElementById("accessoryLifts");
     el.innerHTML = LIFTS.map(function(lift){
       var rows = (state.accessories[lift]||[]).map(function(ex){
+        var kit = kitOf(ex), input = KIT_META[kit].input;
         return '<div class="exrow" data-exid="'+ex.id+'" data-lift="'+lift+'">'
           + '<input type="text" data-field="name" value="'+escapeAttr(ex.name)+'" placeholder="Exercise">'
           + '<input type="number" data-field="sets" value="'+ex.sets+'" min="1" max="10" title="sets">'
           + '<span class="hint">×</span>'
           + '<input type="text" data-field="reps" value="'+escapeAttr(String(ex.reps))+'" style="width:56px" title="reps">'
-          + '<label class="bw"><input type="checkbox" data-field="weighted" '+(ex.weighted?"checked":"")+'> weighted</label>'
-          + (ex.weighted ? '<input type="number" class="wt-input" data-field="weight" value="'+ex.weight+'" step="0.5" title="weight ('+state.unit+')">' : "")
+          + kitSelectHTML(kit)
+          + (input==="number" ? '<input type="number" class="wt-input" data-field="weight" value="'+ex.weight+'" step="0.5" title="weight ('+state.unit+')">' : "")
+          + (input==="text" ? '<input type="text" class="band-input" data-field="band" value="'+escapeAttr(ex.band||"")+'" placeholder="e.g. 15-35 kg" title="what\'s printed on the band">' : "")
           + '<button class="rm" data-field="remove" title="remove">×</button>'
           + '</div>';
       }).join("");
@@ -1275,6 +1309,11 @@
         + '<button class="add-ex" data-add-lift="'+lift+'">+ Add exercise</button>'
         + '</div>';
     }).join("");
+  }
+  function kitSelectHTML(kit){
+    return '<select data-field="kit" title="kit">'
+      + KIT_ORDER.map(function(k){ return '<option value="'+k+'"'+(k===kit?" selected":"")+'>'+KIT_META[k].label+'</option>'; }).join("")
+      + '</select>';
   }
   function escapeAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 
@@ -1409,15 +1448,17 @@
     else if(field==="sets") ex.sets = parseInt(e.target.value,10)||1;
     else if(field==="reps") ex.reps = e.target.value;
     else if(field==="weight") ex.weight = parseFloat(e.target.value)||0;
+    else if(field==="band") ex.band = e.target.value;
     renderOutputOnly();
     saveState();
   });
   document.getElementById("accessoryLifts").addEventListener("change", function(e){
-    if(e.target.dataset.field==="weighted"){
+    if(e.target.dataset.field==="kit"){
       var row = e.target.closest("[data-exid]");
       var lift = row.dataset.lift, id = row.dataset.exid;
       var ex = (state.accessories[lift]||[]).find(function(x){return x.id===id;});
-      if(ex){ ex.weighted = e.target.checked; render(); }
+      // the weight is kept, so switching kit and back loses nothing
+      if(ex){ ex.kit = e.target.value; normaliseAccessory(ex); render(); }
     }
   });
   document.getElementById("accessoryLifts").addEventListener("click", function(e){
@@ -1431,7 +1472,7 @@
     var addLiftBtn = e.target.closest("[data-add-lift]");
     if(addLiftBtn){
       var lift = addLiftBtn.dataset.addLift;
-      state.accessories[lift].push({id:"ex-"+Date.now()+Math.random().toString(36).slice(2,6), name:"", sets:3, reps:"10", weighted:false, weight:0});
+      state.accessories[lift].push({id:"ex-"+Date.now()+Math.random().toString(36).slice(2,6), name:"", sets:3, reps:"10", weighted:false, weight:0, kit:"bodyweight", band:""});
       render();
       return;
     }
@@ -1459,7 +1500,7 @@
     var factor = unit==="kg" ? (1/2.20462) : 2.20462;
     LIFTS.forEach(function(l){ state.lifts[l].value = Math.round(state.lifts[l].value*factor*10)/10; });
     Object.keys(state.accessories).forEach(function(l){
-      state.accessories[l].forEach(function(ex){ if(ex.weighted) ex.weight = Math.round(ex.weight*factor*10)/10; });
+      state.accessories[l].forEach(function(ex){ if(KIT_META[kitOf(ex)].input==="number") ex.weight = Math.round(ex.weight*factor*10)/10; });
     });
     state.unit = unit;
     state.roundIncrement = unit==="kg" ? 2.5 : 5;

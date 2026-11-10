@@ -1405,6 +1405,24 @@ const driveBtn = (doc, act) => doc.querySelector('#googleBody [data-drive="' + a
     done(failing);
   }
 
+  // ---------------- accessory kit: old plans read as before ----------------
+  {
+    const linkFor = st => '#s=' + Buffer.from(JSON.stringify(st)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const snap = { programTitle: '2026-10-05', template: 'bbb', unit: 'kg',
+      accessories: { ohp: [], bench: [], deadlift: [], squat: [
+        { id: 'a1', name: 'Front Squat', sets: 3, reps: '5', weighted: true, weight: 61.5 },
+        { id: 'a2', name: 'Pull-up', sets: 3, reps: '8', weighted: false, weight: 0 }] } };
+    const K = load({ url: 'https://andybryson.github.io/531/' + linkFor(snap), idb: new IDBFactory() });
+    await wait(200);
+    const rowFor = id => K.doc.querySelector('#accessoryLifts [data-exid="' + id + '"]');
+    const kitOfRow = id => { const s = rowFor(id) && rowFor(id).querySelector('[data-field="kit"]'); return s ? s.value : null; };
+    log('old weighted:true accessory reads as Barbell', kitOfRow('a1') === 'barbell');
+    log('old weighted:false accessory reads as Bodyweight', kitOfRow('a2') === 'bodyweight');
+    const squatCard = Array.from(K.doc.querySelectorAll('.day-card')).find(c => c.querySelector('h3').textContent === 'Squat');
+    log('old barbell accessory still shows 61.5 with a closest-available plate badge', !!squatCard && /61\.5/.test(squatCard.textContent) && !!squatCard.querySelector('.badge.approx'));
+    done(K);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

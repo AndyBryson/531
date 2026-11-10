@@ -90,9 +90,13 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   nameInput.value = 'Front Squat';
   nameInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   // input handler on name doesn't re-render controls (only output), so the row element is still live here
-  const weightedCheck = lastRow.querySelector('[data-field="weighted"]');
-  weightedCheck.checked = true;
-  weightedCheck.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  const kitSelect = lastRow.querySelector('select[data-field="kit"]');
+  log('accessory row has a kit dropdown, Bodyweight first and Assisted last', !!kitSelect && kitSelect.options.length === 8 && kitSelect.options[0].text === 'Bodyweight' && kitSelect.options[7].text === 'Assisted');
+  log('a new accessory starts as Bodyweight', !!kitSelect && kitSelect.value === 'bodyweight');
+  if (kitSelect) {
+    kitSelect.value = 'barbell';
+    kitSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  }
   await wait(20); // this triggers a full render() -> re-query fresh nodes below
 
   rows = squatAccessoryBlock().querySelectorAll('.exrow');
@@ -117,6 +121,57 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   log('Front Squat (61.5kg, not reachable exactly in 1.25kg steps) still renders a best-effort plate badge', hasBadges);
   const approxBadge = frontSquatList ? frontSquatList.querySelector('.badge.approx') : null;
   log('inexact loading is flagged as approximate rather than silently wrong', !!approxBadge && /closest available/.test(approxBadge.getAttribute('title') || ''));
+
+  // --- kit choice: each kit shows the right input in the editor ---
+  async function addSquatAccessory(name, kit) {
+    doc.querySelector('[data-add-lift="squat"]').click();
+    await wait(20);
+    let r = squatAccessoryBlock().querySelectorAll('.exrow');
+    const row = r[r.length - 1];
+    const n = row.querySelector('[data-field="name"]');
+    n.value = name;
+    n.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    const k = row.querySelector('[data-field="kit"]');
+    if (k) { k.value = kit; k.dispatchEvent(new dom.window.Event('change', { bubbles: true })); }
+    await wait(20);
+    r = squatAccessoryBlock().querySelectorAll('.exrow');
+    return r[r.length - 1];
+  }
+  function rowById(id) { return squatAccessoryBlock().querySelector('[data-exid="' + id + '"]'); }
+
+  let kitRow = await addSquatAccessory('Band Pull-apart', 'band');
+  const bandInput = kitRow.querySelector('input[data-field="band"]');
+  log('band kit shows a text box instead of a weight box', !!bandInput && bandInput.type === 'text' && !kitRow.querySelector('[data-field="weight"]'));
+  const bandId = kitRow.dataset.exid;
+  if (bandInput) { bandInput.value = '15-35 kg'; bandInput.dispatchEvent(new dom.window.Event('input', { bubbles: true })); await wait(20); }
+
+  kitRow = await addSquatAccessory('Assisted Pull-up', 'assisted');
+  log('assisted kit shows a text box instead of a weight box', !!kitRow.querySelector('input[data-field="band"]') && !kitRow.querySelector('[data-field="weight"]'));
+
+  kitRow = await addSquatAccessory('Plank', 'bodyweight');
+  log('bodyweight kit shows no weight input', !kitRow.querySelector('[data-field="weight"]') && !kitRow.querySelector('[data-field="band"]'));
+
+  kitRow = await addSquatAccessory('Landmine Press', 'landmine');
+  const lmId = kitRow.dataset.exid;
+  const lmWt = kitRow.querySelector('[data-field="weight"]');
+  log('landmine kit shows a weight box', !!lmWt);
+  if (lmWt) { lmWt.value = '20'; lmWt.dispatchEvent(new dom.window.Event('input', { bubbles: true })); await wait(20); }
+
+  // unit switch converts kit weights but leaves band text as typed
+  doc.querySelector('[data-unit="lbs"]').click();
+  await wait(20);
+  const lmLbs = rowById(lmId) && rowById(lmId).querySelector('[data-field="weight"]');
+  const bandLbs = rowById(bandId) && rowById(bandId).querySelector('[data-field="band"]');
+  log('kg to lb converts a landmine weight (20 kg -> 44.1)', !!lmLbs && lmLbs.value === '44.1');
+  log('kg to lb leaves band text untouched', !!bandLbs && bandLbs.value === '15-35 kg');
+  doc.querySelector('[data-unit="kg"]').click();
+  await wait(20);
+  // remove the kit test rows so later checks see the squat accessories they expect
+  for (const name of ['Band Pull-apart', 'Assisted Pull-up', 'Plank', 'Landmine Press']) {
+    const row = Array.from(squatAccessoryBlock().querySelectorAll('.exrow')).find(r => r.querySelector('[data-field="name"]').value === name);
+    if (row) { row.querySelector('[data-field="remove"]').click(); await wait(20); }
+  }
+  log('no errors after the kit editor checks', errors.length === 0);
 
   // --- focus retention: typing a training max should not rebuild the input out from under the user ---
   const ohpMaxInput = doc.querySelector('[data-lift="ohp"][data-field="value"]');
