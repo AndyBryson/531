@@ -1748,6 +1748,138 @@ function progressFixture(idb) {
     done(dom);
   }
 
+  // ---------------- import: Garmin history ----------------
+  // A: logged in the app, B: imported before, C: new. The file has all three.
+  const GA = '2025-03-03', GB = '2025-03-05', GC = '2025-03-07', GD = '2025-02-26';
+  const garminFile = { source: 'garmin', sessions: [
+    { date: GA, sets: [{ exercise: 'Squat', weight: 100, unit: 'kg', reps: 5 }] },
+    { date: GB, sets: [{ exercise: 'Squat', weight: 112.5, unit: 'kg', reps: 5 }, { exercise: 'Overhead Press', weight: 47.5, unit: 'kg', reps: 5 }] },
+    { date: GC, sets: [
+      { exercise: 'Squat', weight: 60, unit: 'kg', reps: 5, warmup: true },
+      { exercise: 'Squat', weight: 115, unit: 'kg', reps: 5 }, { exercise: 'Squat', weight: 115, unit: 'kg', reps: 5 }, { exercise: 'Squat', weight: 115, unit: 'kg', reps: 5 },
+      { exercise: 'Bench Press', weight: 77.5, unit: 'kg', reps: 5 }] },
+    { date: GD, sets: [{ exercise: 'Deadlift', weight: 140, unit: 'kg', reps: 5 }] },
+  ] };
+  function garminSeed(idb) {
+    const g = (date, i, ex, w) => ({ id: 'g-' + date + '-' + i, t: '2025-01-01T00:00:00Z', exercise: ex, weight: w, unit: 'kg', reps: 5, status: 'reps', planned: null, note: '', week: 1, day: 1 });
+    return idbPut(idb, '531-planner', 'sessions', [
+      { date: GA, programme: { title: 'Cycle 9', week: 1, day: 1, state: null }, updated: GA + 'T18:00:00Z', rev: 1,
+        entries: [{ id: 'mine', t: 'x', exercise: 'Squat', weight: 90, unit: 'kg', reps: 5, status: 'reps', planned: null, note: '' }] },
+      { date: GB, programme: { title: 'Garmin history', source: 'garmin', week: 1, day: 1, state: null }, updated: '2025-01-01T00:00:00Z', rev: 1,
+        entries: [g(GB, 0, 'Squat', 100), g(GB, 1, 'Squat', 100), g(GB, 2, 'Squat', 100)] },
+    ]);
+  }
+  function importFile(dom, content) {
+    const input = dom.doc.getElementById('progressImportFile');
+    if (!input) return;
+    const file = new dom.window.File([typeof content === 'string' ? content : JSON.stringify(content)], 'garmin.json', { type: 'application/json' });
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    fire(dom, input, 'change');
+  }
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    log('import is offered even with nothing logged', !!dom.doc.getElementById('progressImport') && !!dom.doc.getElementById('progressImportFile'));
+    done(dom);
+  }
+  {
+    const idb = new IDBFactory();
+    await garminSeed(idb);
+    let asked = '';
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb, confirm: m => { asked = m; return true; } });
+    await wait(250);
+    importFile(dom, garminFile);
+    await wait(400);
+    log('import asks first, counting new, replaced and skipped dates', /2 new/.test(asked) && /1 imported earlier/.test(asked) && /1 date already logged/.test(asked));
+    const recs = {};
+    (await idbAll(idb, '531-planner', 'sessions')).forEach(r => { recs[r.date] = r; });
+    const live = r => r.entries.filter(e => !e.deleted);
+    log('a date logged in the app is left alone', live(recs[GA]).length === 1 && live(recs[GA])[0].id === 'mine' && recs[GA].programme.title === 'Cycle 9');
+    log('a date imported earlier is replaced by the new file', live(recs[GB]).map(e => e.exercise + ' ' + e.weight).join('|') === 'Squat 112.5|Overhead Press 47.5');
+    log('replaced sets are kept as tombstones so sync never brings them back', recs[GB].entries.length === 3 && recs[GB].entries.filter(e => e.deleted).length === 1);
+    log('a new date is stored as an imported Garmin session', !!recs[GC] && recs[GC].programme.title === 'Garmin history' && recs[GC].programme.source === 'garmin' && recs[GC].programme.state === null && live(recs[GC]).length === 5);
+    const gc = recs[GC] ? live(recs[GC]) : [], sq = gc[1] || {};
+    log('imported sets look like added sets', sq.exercise === 'Squat' && sq.weight === 115 && sq.unit === 'kg' && sq.reps === 5 && sq.status === 'reps' && sq.planned === null && !!sq.id && !!sq.t);
+    log('warm-ups keep their mark', !!gc[0] && gc[0].warmup === true && !sq.warmup);
+    log('import says what it did', /Imported 3 sessions/.test((dom.doc.getElementById('progressImportMsg') || {}).textContent));
+    log('imported sets show on the progress chart', Array.from(dom.doc.querySelectorAll('#progressView .chip')).some(c => c.textContent.trim() === 'Overhead Press'));
+    done(dom);
+  }
+  {
+    const idb = new IDBFactory();
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb, confirm: () => false });
+    await wait(250);
+    importFile(dom, garminFile);
+    await wait(300);
+    log('declining the import adds nothing', (await idbAll(idb, '531-planner', 'sessions')).length === 0);
+    done(dom);
+  }
+  {
+    const idb = new IDBFactory();
+    let asked = false;
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb, confirm: () => { asked = true; return true; } });
+    await wait(250);
+    importFile(dom, '{not json');
+    await wait(300);
+    log('a file that is not an import says so and adds nothing', !asked && /not a sessions file/i.test((dom.doc.getElementById('progressImportMsg') || {}).textContent) && (await idbAll(idb, '531-planner', 'sessions')).length === 0);
+    done(dom);
+  }
+
+  // ---------------- replay: Garmin history ----------------
+  {
+    const idb = new IDBFactory();
+    await garminSeed(idb);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(250);
+    importFile(dom, garminFile);
+    await wait(400);
+    done(dom);
+    const r = load({ url: 'https://andybryson.github.io/531/#v=replay', idb });
+    await wait(300);
+    const { doc } = r;
+    const planSel = doc.getElementById('replayPlanSel');
+    const names = Array.from(planSel.options).map(o => o.textContent);
+    log('Garmin history is in the replay plan list', names.includes('Garmin history') && names.includes('Cycle 9'));
+    setValue(r, planSel, String(names.indexOf('Garmin history')));
+    const monthSel = doc.getElementById('replayMonthSel');
+    log('Garmin history is picked by month, newest first', !!monthSel && Array.from(monthSel.options).map(o => o.textContent).join('|') === 'Mar 2025|Feb 2025');
+    const days = () => Array.from(doc.querySelectorAll('#replayView .history-day'));
+    log('one row per session, newest first', days().map(d => d.dataset.date).join('|') === GC + '|' + GB);
+    const first = days()[0], sum = first && first.querySelector('summary') ? first.querySelector('summary').textContent : '';
+    log('each row sums up its heaviest sets', /Squat 5 × 115/.test(sum) && /Bench Press 5 × 77\.5/.test(sum));
+    const rows = first ? Array.from(first.querySelectorAll('.history-set')) : [];
+    log('identical sets fold into one line', rows.some(x => /3 sets/.test(x.textContent) && /5 × 115 kg/.test(x.textContent)));
+    log('warm-ups are greyed', rows.some(x => x.classList.contains('warmup') && /5 × 60 kg/.test(x.textContent)));
+    log('no week picker for Garmin history', !doc.getElementById('replayWeekSel'));
+    if (monthSel) setValue(r, monthSel, '2025-02');
+    log('picking a month shows its sessions', days().map(d => d.dataset.date).join('|') === GD);
+    setValue(r, doc.getElementById('replayPlanSel'), String(names.indexOf('Cycle 9')));
+    log('a plan from the app still replays by week', !!doc.getElementById('replayWeekSel') && !doc.getElementById('replayMonthSel'));
+    done(r);
+
+    // a set logged in the app on an imported date makes it the app's: a re-import skips it
+    const L = load({ url: 'https://andybryson.github.io/531/#v=log', idb });
+    await wait(250);
+    setValue(L, L.doc.getElementById('logDate'), GC);
+    await wait(30);
+    await startLog(L);
+    setValue(L, L.doc.getElementById('addExName'), 'Farmer Carry');
+    setValue(L, L.doc.getElementById('addExWeight'), '40');
+    setValue(L, L.doc.getElementById('addExReps'), '1');
+    L.doc.getElementById('addExBtn').click();
+    await wait(300);
+    done(L);
+    let asked = '';
+    const P = load({ url: 'https://andybryson.github.io/531/#v=progress', idb, confirm: m => { asked = m; return true; } });
+    await wait(250);
+    importFile(P, garminFile);
+    await wait(400);
+    const gc = (await idbAll(idb, '531-planner', 'sessions')).find(x => x.date === GC);
+    log('logging on an imported date stops a re-import replacing it', /2 dates already logged/.test(asked) && gc.entries.some(e => e.exercise === 'Farmer Carry' && !e.deleted));
+    done(P);
+  }
+
   console.log('\nFINAL total runtime errors:', totalErrors);
   if (totalErrors) process.exitCode = 1;
 })();

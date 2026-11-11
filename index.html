@@ -235,6 +235,13 @@
   .progress-chart .ppt{stroke:var(--surface); stroke-width:1.5; cursor:pointer;}
   .progress-chart .phit{cursor:pointer;}
   .progress-readout{min-height:1.4em; font-size:13px; color:var(--text-dim); margin-top:8px;}
+  .progress-import{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:18px; font-size:13px; color:var(--text-dim);}
+  .history-list{display:flex; flex-direction:column; gap:8px; max-width:680px; margin:12px 0 26px;}
+  .history-day{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);}
+  .history-day summary{display:flex; flex-wrap:wrap; gap:4px 12px; align-items:baseline; padding:10px 14px; cursor:pointer;}
+  .history-day summary b{min-width:110px;}
+  .history-day summary .history-sum{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:12.5px; color:var(--text-dim);}
+  .history-day .set-list{padding:0 14px 12px;}
   .log-head{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
   .log-head input, .log-head select{font-size:15px; padding:9px 10px; flex:1 1 130px;}
   .log-head .log-plan-sel{flex-basis:100%;}
@@ -1759,6 +1766,7 @@
   function touchSession(rec){
     rec.programme.title = state.programTitle;
     rec.programme.state = clone(state);
+    delete rec.programme.source; // logged in the app now, so an import never replaces it
     rec.updated = nowISO();
     rec.rev = (rec.rev||0) + 1;
     persistSession(rec);
@@ -2415,7 +2423,7 @@
         var wd = parts[k];
         var r = dayView(rec, wd);
         r.programme = {title:name, week:wd.week, day:wd.day, state:rec.programme && rec.programme.state};
-        if(!plans[name]){ plans[name] = {name:name, weeks:{}, latest:d, latestWeek:wd.week}; list.push(plans[name]); }
+        if(!plans[name]){ plans[name] = {name:name, weeks:{}, latest:d, latestWeek:wd.week, imported:isImported(rec)}; list.push(plans[name]); }
         var p = plans[name];
         (p.weeks[wd.week] = p.weeks[wd.week] || []).push(r);
         if(d >= p.latest){ p.latest = d; p.latestWeek = wd.week; }
@@ -2500,6 +2508,7 @@
     var plan = plans.filter(function(p){ return p.name===replayPlan; })[0];
     if(!plan){ plan = plans[0]; replayWeekNum = null; }
     replayPlan = plan.name;
+    if(plan.imported){ el.innerHTML = historyHTML(plans, plan); return; }
     var weekNums = Object.keys(plan.weeks).map(Number).sort(function(a, b){ return a-b; });
     if(weekNums.indexOf(replayWeekNum)<0) replayWeekNum = plan.latestWeek;
     var w = replayWeekNum;
@@ -2534,14 +2543,72 @@
     });
 
     el.innerHTML = '<div class="replay-head">'
-      + '<label for="replayPlanSel">Plan</label>'
-      + '<select id="replayPlanSel">'+plans.map(function(p, i){ return '<option value="'+i+'"'+(p===plan?" selected":"")+'>'+escapeAttr(p.name || "Untitled plan")+'</option>'; }).join("")+'</select>'
+      + replayPlanSelHTML(plans, plan)
       + '<label for="replayWeekSel">Week</label>'
       + '<select id="replayWeekSel">'+weekNums.map(function(n){ return '<option value="'+n+'"'+(n===w?" selected":"")+'>'+WEEK_LABEL[n]+'</option>'; }).join("")+'</select>'
       + '<span class="replay-key"><span class="k done">done</span><span class="k changed">changed</span><span class="k missed">missed</span></span></div>'
       + block;
   }
+  function replayPlanSelHTML(plans, plan){
+    return '<label for="replayPlanSel">Plan</label>'
+      + '<select id="replayPlanSel">'+plans.map(function(p, i){ return '<option value="'+i+'"'+(p===plan?" selected":"")+'>'+escapeAttr(p.name || "Untitled plan")+'</option>'; }).join("")+'</select>';
+  }
+
+  // Imported sessions have no plan to set them against, so they replay as a
+  // plain list: one month at a time, a row per session, newest first, each
+  // opening to its sets with identical sets in a row folded into one line
+  var replayMonth = null;
+  function historySummary(entries){
+    var best = {}, order = [];
+    entries.forEach(function(e){
+      if(e.warmup) return;
+      var cur = best[e.exercise];
+      if(!cur){ order.push(e.exercise); best[e.exercise] = e; return; }
+      if((e.weight||0) > (cur.weight||0) || ((e.weight||0)===(cur.weight||0) && e.reps > cur.reps)) best[e.exercise] = e;
+    });
+    return order.map(function(n){
+      var e = best[n];
+      return n+" "+e.reps+(e.weight!=null ? " × "+fmtWeight(e.weight) : "");
+    }).join(" · ");
+  }
+  function historySetsHTML(entries){
+    var runs = [];
+    entries.forEach(function(e){
+      var last = runs[runs.length-1];
+      if(last && last.e.exercise===e.exercise && last.e.weight===e.weight && last.e.unit===e.unit && last.e.reps===e.reps && !!last.e.warmup===!!e.warmup) last.n++;
+      else runs.push({e:e, n:1});
+    });
+    return runs.map(function(r){
+      return '<div class="set-row replay-row history-set'+(r.e.warmup ? " warmup" : "")+'"><div class="set-main"><span class="set-load">'+escapeAttr(r.e.exercise)+'</span>'
+        + '<span class="set-meta">'+(r.e.warmup ? "Warm-up, " : "")+plural(r.n, "set")+'</span></div>'
+        + '<div class="replay-result">'+escapeAttr(resultText(r.e))+'</div></div>';
+    }).join("");
+  }
+  function historyHTML(plans, plan){
+    var dates = sessionDates().filter(function(d){
+      var rec = sessions[d];
+      return (rec.programme && rec.programme.title)===plan.name && liveEntries(rec).length;
+    }).reverse();
+    var months = [];
+    dates.forEach(function(d){ if(months.indexOf(d.slice(0, 7))<0) months.push(d.slice(0, 7)); });
+    if(months.indexOf(replayMonth)<0) replayMonth = months[0];
+    function monthLabel(m){ return MONTHS[Number(m.slice(5, 7))-1]+" "+m.slice(0, 4); }
+    var inMonth = dates.filter(function(d){ return d.slice(0, 7)===replayMonth; });
+    var rows = inMonth.map(function(d){
+      var entries = liveEntries(sessions[d]);
+      return '<details class="history-day" data-date="'+d+'"><summary><b>'+escapeAttr(fmtDay(d))+'</b><span class="history-sum">'+escapeAttr(historySummary(entries))+'</span></summary>'
+        + '<div class="set-list">'+historySetsHTML(entries)+'</div></details>';
+    }).join("");
+    return '<div class="replay-head">'+replayPlanSelHTML(plans, plan)
+      + '<label for="replayMonthSel">Month</label>'
+      + '<select id="replayMonthSel">'+months.map(function(m){ return '<option value="'+m+'"'+(m===replayMonth?" selected":"")+'>'+monthLabel(m)+'</option>'; }).join("")+'</select></div>'
+      + '<h2 class="replay-title">'+escapeAttr(plan.name)+' · '+monthLabel(replayMonth)+'</h2>'
+      + '<p class="program-sub">'+plural(inMonth.length, "session")+'</p>'
+      + '<div class="history-list">'+rows+'</div>';
+  }
+
   document.getElementById("replayView").addEventListener("change", function(e){
+    if(e.target.id==="replayMonthSel"){ replayMonth = e.target.value; renderReplay(); }
     if(e.target.id==="replayPlanSel"){ replayPlan = loggedPlans()[parseInt(e.target.value, 10)].name; replayWeekNum = null; renderReplay(); }
     if(e.target.id==="replayWeekSel"){ replayWeekNum = parseInt(e.target.value, 10); renderReplay(); }
   });
@@ -2784,7 +2851,7 @@
     var el = document.getElementById("progressView");
     if(!storeReady){ el.innerHTML = '<p class="empty-note">Loading…</p>'; return; }
     var all = progressSets();
-    if(!all.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Log a session and it will show here.</p>'; return; }
+    if(!all.length){ el.innerHTML = '<p class="empty-note">Nothing logged yet. Log a session and it will show here.</p>' + importHTML(); return; }
     var ps = progressSettings, lines = progressLines(all), classes = PROGRESS_MODES[ps.mode];
     var sets = progressInRange(all, ps.range), inRange = {};
     sets.forEach(function(st){ inRange[st.line] = true; });
@@ -2808,9 +2875,94 @@
     var chart = series.length ? progressChartSVG(series, groups, ps, narrow) : '<p class="empty-note">Pick one or more exercises to plot.</p>';
     el.innerHTML = '<div class="progress-controls">' + controls + '</div>'
       + '<div class="progress-chips">' + chips + '</div>' + chart
-      + '<p class="progress-readout" id="progressReadout"></p>';
+      + '<p class="progress-readout" id="progressReadout"></p>' + importHTML();
   }
+
+  // ---------------- import ----------------
+  // A one-off way in for workouts recorded elsewhere (Garmin Connect): a JSON
+  // file {sessions:[{date, sets:[{exercise, weight, unit, reps, warmup}]}]}.
+  // Each date becomes a session under the plan name "Garmin history", marked
+  // programme.source "garmin" and with no plan copy. A date logged in the app
+  // is never touched; one imported earlier is replaced, so a corrected file
+  // fixes mistakes. Entry ids are g-<date>-<n>, and sets no longer in the file
+  // become tombstones, so sync never brings them back.
+  var IMPORT_TITLE = "Garmin history";
+  var importMsg = "";
+  function importHTML(){
+    return '<div class="progress-import"><button type="button" class="btn" id="progressImport">Import sessions</button>'
+      + '<input type="file" id="progressImportFile" accept=".json,application/json" hidden>'
+      + '<span id="progressImportMsg">'+escapeAttr(importMsg)+'</span></div>';
+  }
+  function isImported(rec){ return !!(rec && rec.programme && rec.programme.source==="garmin"); }
+  // the file's sessions with their usable sets, or null if it is not a sessions file
+  function parseImport(text){
+    var data;
+    try{ data = JSON.parse(text); } catch(err){ return null; }
+    if(!data || !Array.isArray(data.sessions)) return null;
+    var out = [];
+    for(var i=0; i<data.sessions.length; i++){
+      var s = data.sessions[i];
+      if(!s || !/^\d{4}-\d{2}-\d{2}$/.test(s.date) || !Array.isArray(s.sets)) return null;
+      var sets = s.sets.filter(function(x){
+        return x && String(x.exercise||"").trim() && typeof x.reps==="number" && x.reps>=1;
+      });
+      if(sets.length) out.push({date:s.date, sets:sets});
+    }
+    return out;
+  }
+  function plural(n, one, many){ return n+" "+(n===1 ? one : (many || one+"s")); }
+  function importSessions(text){
+    var list = parseImport(text);
+    if(!list){ importMsg = "That is not a sessions file."; renderProgress(); return; }
+    var fresh = [], again = [], skip = [];
+    list.forEach(function(s){
+      var rec = sessions[s.date];
+      if(isImported(rec)) again.push(s);
+      else if(rec && liveEntries(rec).length) skip.push(s);
+      else fresh.push(s);
+    });
+    var todo = fresh.concat(again);
+    if(!todo.length){ importMsg = "Nothing to import: every date is already logged in the app."; renderProgress(); return; }
+    if(!window.confirm("Import "+plural(todo.length, "session")+" from Garmin? "+fresh.length+" new, "+again.length+" imported earlier (replaced), "
+      + plural(skip.length, "date")+" already logged in the app (skipped).")) return;
+    var t = nowISO();
+    todo.forEach(function(s){
+      var rec = sessions[s.date] || {date:s.date, entries:[], rev:0};
+      var ids = {};
+      var entries = s.sets.map(function(x, i){
+        var id = "g-"+s.date+"-"+i;
+        ids[id] = true;
+        var e = {id:id, t:t, exercise:canonicalName(x.exercise), weight:typeof x.weight==="number" && isFinite(x.weight) ? x.weight : null,
+          unit:x.unit==="lb" ? "lb" : "kg", reps:Math.round(x.reps), status:"reps", planned:null, note:"", week:1, day:1};
+        if(x.warmup) e.warmup = true;
+        return e;
+      });
+      rec.entries.forEach(function(e){
+        if(ids[e.id]) return;
+        if(!e.deleted){ e.deleted = true; e.t = t; }
+        entries.push(e);
+      });
+      rec.entries = entries;
+      rec.programme = {title:IMPORT_TITLE, source:"garmin", week:1, day:1, state:null};
+      rec.updated = t;
+      rec.rev = (rec.rev||0) + 1;
+      sessions[s.date] = rec;
+      persistSession(rec);
+    });
+    importMsg = "Imported "+plural(todo.length, "session")+(skip.length ? ", skipped "+plural(skip.length, "date")+" already logged" : "")+".";
+    renderProgress();
+  }
+
   document.getElementById("progressView").addEventListener("change", function(e){
+    if(e.target.id==="progressImportFile"){
+      var file = e.target.files && e.target.files[0];
+      if(!file) return;
+      var reader = new FileReader();
+      reader.onload = function(){ importSessions(String(reader.result)); };
+      reader.onerror = function(){ importMsg = "Could not read that file."; renderProgress(); };
+      reader.readAsText(file);
+      return;
+    }
     if(e.target.id==="progressRange"){ progressSettings.range = e.target.value; saveProgressSettings(); renderProgress(); return; }
     if(e.target.id!=="progressN") return;
     var n = Math.round(parseNum(e.target.value) || 1);
@@ -2819,6 +2971,7 @@
     renderProgress();
   });
   document.getElementById("progressView").addEventListener("click", function(e){
+    if(e.target.id==="progressImport"){ document.getElementById("progressImportFile").click(); return; }
     var hit = e.target.closest("circle.phit");
     var pt = hit ? hit.previousElementSibling : e.target.closest("circle.ppt");
     if(pt){ var t = pt.querySelector("title"); document.getElementById("progressReadout").textContent = t ? t.textContent : ""; return; }
