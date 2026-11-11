@@ -1748,6 +1748,54 @@ function progressFixture(idb) {
     done(dom);
   }
 
+  // ---------------- progress: date axis ----------------
+  {
+    // a squat a fortnight from 3 Feb 2025 to 10 Nov 2026, with a gap in Aug 2026
+    const idb = new IDBFactory(), recs = [];
+    for (let d = '2025-02-03', i = 0; d <= '2026-11-10'; d = daysFrom(d, 14), i++) {
+      if (d.startsWith('2026-08')) continue;
+      recs.push({ date: d, programme: { title: 'Garmin history', source: 'garmin', week: 1, day: 1, state: null }, updated: 'x', rev: 1,
+        entries: [{ id: 'a' + i, t: 'x', exercise: 'Squat', weight: 100, unit: 'kg', reps: 5, status: 'reps', planned: null, note: '' }] });
+    }
+    await idbPut(idb, '531-planner', 'sessions', recs);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(300);
+    const { doc } = dom;
+    const click = sel => { const el = doc.querySelector(sel); if (el) el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); };
+    const xl = () => Array.from(doc.querySelectorAll('#progressChart text.pxlabel'));
+    const texts = () => xl().map(t => t.textContent);
+    log('a long range is labelled by month, with the year on the first and on January', JSON.stringify(texts()) === JSON.stringify(['Apr 2025', 'Jul', 'Oct', 'Jan 2026', 'Apr', 'Jul', 'Oct']));
+    const xs = xl().map(t => Number(t.getAttribute('x'))), gaps = xs.slice(1).map((x, i) => x - xs[i]);
+    log('month labels are evenly spaced in time, whatever the gaps in the data', gaps.length > 2 && Math.max(...gaps) - Math.min(...gaps) < 4);
+    log('a faint line marks each new year', doc.querySelectorAll('#progressChart line.pyear').length === 1);
+    const pt = doc.querySelector('#progressChart circle.ppt');
+    log('a point names its week with the year', /^w\/c 3 Feb 2025: /.test(pt.querySelector('title').textContent));
+    click('[data-pper="session"]');
+    log('points per session are labelled by month too', texts()[0] === 'Apr 2025' && /^Mon 3 Feb 2025: /.test(doc.querySelector('#progressChart circle.ppt title').textContent));
+    click('[data-pper="plan"]');
+    log('points per plan keep their plan labels', JSON.stringify(texts()) === '["Garmin history"]' && !doc.querySelector('#progressChart line.pyear'));
+    click('[data-pper="week"]');
+    Object.defineProperty(doc.getElementById('progressView'), 'clientWidth', { configurable: true, get: () => 343 });
+    click('[data-pmode="e1rm"]');
+    log('on a phone there are about three month labels', xl().length >= 2 && xl().length <= 4);
+    done(dom);
+  }
+  {
+    // twelve weeks of Mondays across New Year
+    const idb = new IDBFactory(), recs = [];
+    for (let d = '2025-11-17', i = 0; d <= '2026-02-02'; d = daysFrom(d, 7), i++) {
+      recs.push({ date: d, programme: { title: 'C', week: 1, day: 1, state: null }, updated: 'x', rev: 1,
+        entries: [{ id: 'b' + i, t: 'x', exercise: 'Squat', weight: 100 + i, unit: 'kg', reps: 5, status: 'reps', planned: null, note: '' }] });
+    }
+    await idbPut(idb, '531-planner', 'sessions', recs);
+    const dom = load({ url: 'https://andybryson.github.io/531/#v=progress', idb });
+    await wait(300);
+    const texts = Array.from(dom.doc.querySelectorAll('#progressChart text.pxlabel')).map(t => t.textContent);
+    log('a short range is labelled by day at even weekly steps, the year shown where it changes',
+      JSON.stringify(texts) === JSON.stringify(['17 Nov 2025', '1 Dec', '15 Dec', '29 Dec', '12 Jan 2026', '26 Jan']));
+    done(dom);
+  }
+
   // ---------------- import: Garmin history ----------------
   // A: logged in the app, B: imported before, C: new. The file has all three.
   const GA = '2025-03-03', GB = '2025-03-05', GC = '2025-03-07', GD = '2025-02-26';

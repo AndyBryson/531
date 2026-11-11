@@ -229,6 +229,7 @@
   #progressRange{font-size:13px; padding:6px 8px;}
   .progress-chart{width:100%; height:auto; display:block; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);}
   .progress-chart .pgrid{stroke:var(--rule); stroke-width:1;}
+  .progress-chart .pyear{stroke:var(--rule); stroke-width:1; stroke-dasharray:3 4;}
   .progress-chart text{fill:var(--text-dim); font-family:var(--sans); font-size:12px;}
   .progress-chart text.plabel{font-weight:600;}
   .progress-chart .pline{fill:none; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;}
@@ -2740,12 +2741,12 @@
       var key = progressGroupKey(st, per);
       if(seen[key]) return;
       var n = dayNum(st.date);
-      if(per==="week") seen[key] = {key:key, x:mondayNum(st.date), label:"w/c "+shortDate(mondayNum(st.date))};
+      if(per==="week") seen[key] = {key:key, x:mondayNum(st.date), label:"w/c "+shortDate(mondayNum(st.date))+" "+isoOfDay(mondayNum(st.date)).slice(0, 4)};
       else if(per==="plan"){
         var lead = /^\d{4}-\d{2}-\d{2}/.exec(key);
         seen[key] = {key:key, x:lead ? dayNum(lead[0]) : n, label:key.length>24 ? key.slice(0, 23)+"…" : (key || "Unnamed plan")};
       }
-      else seen[key] = {key:key, x:n, label:WEEKDAYS[(n+4)%7]+" "+shortDate(n)};
+      else seen[key] = {key:key, x:n, label:WEEKDAYS[(n+4)%7]+" "+shortDate(n)+" "+st.date.slice(0, 4)};
       groups.push(seen[key]);
     });
     groups.sort(function(a, b){ return a.x-b.x; });
@@ -2796,6 +2797,42 @@
     var raw = range/5, mag = Math.pow(10, Math.floor(Math.log(raw)/Math.LN10)), f = raw/mag;
     return (f<=1 ? 1 : f<=2 ? 2 : f<=2.5 ? 2.5 : f<=5 ? 5 : 10)*mag;
   }
+  // x axis labels for a date axis from day x0 to x1, at most target+1 of them:
+  // over about five months, the first of every 1, 2, 3, 6 or 12 months ("Apr",
+  // with the year on the first label and on January); shorter, every 1 to 4
+  // weeks from the first Monday ("17 Nov", with the year on the first label
+  // and where it changes, if the range crosses New Year). [] when none fit.
+  function dateTicks(x0, x1, target){
+    var ticks = [], i, k, n;
+    if(x1-x0 > 150){
+      var steps = [1, 2, 3, 6, 12];
+      for(i=0; i<steps.length; i++){
+        ticks = [];
+        var y = Number(isoOfDay(x0).slice(0, 4)), m = Number(isoOfDay(x0).slice(5, 7))-1;
+        for(;; m++){
+          if(m>11){ m = 0; y++; }
+          n = dayNum(y+"-"+(m<9 ? "0" : "")+(m+1)+"-01");
+          if(n > x1) break;
+          if(n >= x0 && m%steps[i]===0) ticks.push({x:n, label:MONTHS[m]+(!ticks.length || m===0 ? " "+y : "")});
+        }
+        if(ticks.length <= target+1) break;
+      }
+      return ticks;
+    }
+    var start = mondayNum(isoOfDay(x0)); if(start < x0) start += 7;
+    var crosses = isoOfDay(x0).slice(0, 4) !== isoOfDay(x1).slice(0, 4);
+    for(k=1; k<=8; k++){
+      ticks = [];
+      var lastYear = null;
+      for(n = start; n <= x1; n += 7*k){
+        var yy = isoOfDay(n).slice(0, 4);
+        ticks.push({x:n, label:shortDate(n)+(crosses && yy!==lastYear ? " "+yy : "")});
+        lastYear = yy;
+      }
+      if(ticks.length <= target+1) break;
+    }
+    return ticks;
+  }
   // narrow: drawn on a smaller canvas so text and markers stay readable on a phone
   function progressChartSVG(series, groups, ps, narrow){
     var W = narrow ? 480 : 800, H = narrow ? 300 : 320, L = narrow ? 40 : 52, R = narrow ? 110 : 150, T = 14, B = 34;
@@ -2816,12 +2853,27 @@
       out += '<line class="pgrid" x1="'+L+'" x2="'+(W-R)+'" y1="'+n1(Y(t))+'" y2="'+n1(Y(t))+'"/>'
         + '<text class="pylabel" x="'+(L-8)+'" y="'+n1(Y(t)+4)+'" text-anchor="end">'+fmtProgress(t)+'</text>';
     }
-    // x labels: about six (three on a phone); every point's title names its group
-    var every = Math.max(1, Math.ceil(groups.length/(narrow ? 3 : 6)));
-    groups.forEach(function(g, i){
-      if(i%every && i!==groups.length-1) return;
-      out += '<text class="pxlabel" x="'+n1(X(g.x))+'" y="'+(H-10)+'" text-anchor="middle">'+escapeAttr(g.label)+'</text>';
-    });
+    // x labels: about six (three on a phone); every point's title names its group.
+    // Session and week sit on a date axis, labelled at even calendar steps;
+    // plans are evenly spaced, so every few plans is labelled
+    var target = narrow ? 3 : 6;
+    var ticks = ps.per==="plan" ? [] : dateTicks(x0, x1, target);
+    if(ticks.length){
+      ticks.forEach(function(t){
+        out += '<text class="pxlabel" x="'+n1(X(t.x))+'" y="'+(H-10)+'" text-anchor="middle">'+escapeAttr(t.label)+'</text>';
+      });
+      // a faint line at each new year
+      for(var yr = Number(isoOfDay(x0).slice(0, 4))+1; dayNum(yr+"-01-01")<=x1; yr++){
+        var yx = n1(X(dayNum(yr+"-01-01")));
+        out += '<line class="pyear" x1="'+yx+'" x2="'+yx+'" y1="'+T+'" y2="'+(H-B)+'"/>';
+      }
+    } else {
+      var every = Math.max(1, Math.ceil(groups.length/target));
+      groups.forEach(function(g, i){
+        if(i%every && i!==groups.length-1) return;
+        out += '<text class="pxlabel" x="'+n1(X(g.x))+'" y="'+(H-10)+'" text-anchor="middle">'+escapeAttr(g.label)+'</text>';
+      });
+    }
     var labels = [];
     series.forEach(function(se){
       var colour = 'var(--line'+se.colour+')', d = "", run = false, last = null;
